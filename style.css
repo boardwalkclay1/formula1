@@ -1,0 +1,210 @@
+/* ---------------------------------------------------------
+   GOLDEN FORMULA – PREMIUM GOLD & BLACK THEME
+   --------------------------------------------------------- */
+
+:root {
+  --gold: #d4af37;
+  --gold-light: #f5d97c;
+  --gold-dark: #a8861a;
+  --black: #050505;
+  --black-soft: #0d0d0d;
+  --panel: #111111;
+  --panel-soft: #161616;
+  --text: #f2f2f2;
+  --text-dim: #b8b8b8;
+  --accent: #ff2b6a;
+  --success: #3cff9d;
+  --danger: #ff4c84;
+  --border: #2a2a2a;
+  --shadow: rgba(0,0,0,0.55);
+}
+
+/* GLOBAL -------------------------------------------------- */
+
+body {
+  font-family: "Inter", Arial, sans-serif;
+  background: var(--black) url('gold-candles-bg.png') center/cover no-repeat fixed;
+  color: var(--text);
+  margin: 0;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+h1, h2, h3 {
+  color: var(--gold);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+p, li {
+  font-size: 18px;
+}
+
+a {
+  color: var(--gold-light);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+a:hover {
+  color: var(--gold);
+}
+
+/* HEADER -------------------------------------------------- */
+
+.gf-header {
+  background: var(--black-soft);
+  border-bottom: 2px solid var(--gold-dark);
+  padding: 20px 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.gf-header h1 {
+  margin: 0;
+  font-size: 32px;
+  color: var(--gold-light);
+}
+
+.gf-header nav a {
+  margin-left: 20px;
+  font-size: 18px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid transparent;
+}
+
+.gf-header nav a:hover {
+  border-bottom: 2px solid var(--gold);
+}
+
+/* MAIN LAYOUT -------------------------------------------- */
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 30px;
+}
+
+/* PANELS -------------------------------------------------- */
+
+.gf-hero,
+.gf-tool,
+.gf-trade-alive,
+.gf-brokers,
+.gf-steps,
+.gf-glossary,
+.gf-rules,
+.gf-links {
+  background: var(--panel);
+  border: 2px solid var(--gold-dark);
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 30px;
+  box-shadow: 0 6px 20px var(--shadow);
+}
+
+/* FORM ELEMENTS ------------------------------------------ */
+
+label {
+  display: block;
+  margin-top: 15px;
+  font-size: 18px;
+  color: var(--gold-light);
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 14px;
+  margin-top: 6px;
+  border-radius: 10px;
+  border: 2px solid var(--gold-dark);
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 18px;
+  box-shadow: inset 0 0 8px rgba(0,0,0,0.4);
+}
+
+textarea {
+  min-height: 120px;
+  font-family: monospace;
+}
+
+/* BUTTONS ------------------------------------------------- */
+
+button {
+  width: 100%;
+  padding: 16px;
+  margin-top: 25px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: var(--black);
+  font-weight: 800;
+  font-size: 20px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px var(--shadow);
+  transition: 0.2s ease;
+}
+
+button:hover {
+  background: linear-gradient(135deg, var(--gold-light), var(--gold));
+  transform: translateY(-2px);
+}
+
+/* RESULT BOX --------------------------------------------- */
+
+.result {
+  margin-top: 25px;
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(212,175,55,0.08);
+  border: 2px solid var(--gold-dark);
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+/* NOTES --------------------------------------------------- */
+
+.note {
+  font-size: 16px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* CANVAS -------------------------------------------------- */
+
+canvas {
+  background: var(--black-soft);
+  border: 2px solid var(--gold-dark);
+  border-radius: 12px;
+  margin-top: 20px;
+  width: 100%;
+  max-width: 1000px;
+  box-shadow: 0 6px 20px var(--shadow);
+}
+
+/* BACKGROUND CANDLESTICKS -------------------------------- */
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  width: 300px;
+  height: 100%;
+  background: url('gold-candle-left.png') center/contain no-repeat;
+  opacity: 0.15;
+  z-index: -1;
+}
+
+body::after {
+  right: 0;
+  background: url('gold-candle-right.png') center/contain no-repeat;
+}
+
+body::before {
+  left: 0;
+}
