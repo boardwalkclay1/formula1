@@ -1,18 +1,121 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>Golden Formula Hub</title>
+  <title>Golden Formula – Home</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+  <script type="module" src="modules/ui-home.js"></script>
 </head>
-<body class="gold-theme">
-  <main class="centered">
-    <h1>Golden Formula Engine</h1>
-    <p>Upload a chart, let the engine read it, and see the prediction and options idea.</p>
+<body>
+  <header class="gf-header">
+    <h1>Golden Formula</h1>
     <nav>
-      <a href="simulator.html">Go to Simulator</a>
-      <a href="options.html">Go to Options</a>
+      <a href="index.html">Home</a>
+      <a href="golden-rules.html">Golden Rules</a>
+      <a href="glossary.html">Glossary</a>
+      <a href="brokers.html">Brokers & Accounts</a>
     </nav>
+  </header>
+
+  <main>
+    <section class="gf-hero">
+      <h2>Simple, Obvious Setups Only</h2>
+      <p>
+        This tool looks for very clear moves: two moving averages crossing, obvious highs and lows,
+        clean even numbers, and simple reversal patterns. No complicated stock language. Just
+        “up or down”, “where to enter”, and “where to cut it”.
+      </p>
+    </section>
+
+    <section class="gf-trade-alive">
+      <h2>Trade Alive – My Trading Academy</h2>
+      <p>
+        Trade Alive is my trading academy and education hub. It’s built to show you exactly how I
+        think about the market using simple rules, obvious patterns, and strict risk control.
+      </p>
+      <p>
+        This is the same style of logic I used to turn a small account into
+        <strong>$40,000 in 5 days</strong>—not by guessing, but by following clear rules and
+        only taking the most obvious setups.
+      </p>
+      <p>
+        The Golden Formula simulator and options picker are part of that same mindset: they don’t
+        try to be magic, they just make it easier to see what I see.
+      </p>
+      <p>
+        You can explore the code and updates here:
+        <a href="https://github.com/your-username/your-repo" target="_blank">Golden Formula GitHub Repo</a>
+      </p>
+    </section>
+
+    <section class="gf-tool">
+      <h2>1. Screenshot (auto‑read)</h2>
+      <label>Upload chart or options screenshot</label>
+      <input type="file" id="imageInput" accept="image/*">
+      <p class="note" id="ocrStatus">No image loaded yet.</p>
+
+      <h2>2. Paste or type numbers</h2>
+      <label>Paste data (optional)</label>
+      <textarea id="pasteBox" placeholder="Paste your chart text or let the screenshot fill this."></textarea>
+
+      <label>Current Price</label>
+      <input id="price" type="number" step="0.01">
+
+      <label>Day High</label>
+      <input id="dayHigh" type="number" step="0.01">
+
+      <label>Day Low</label>
+      <input id="dayLow" type="number" step="0.01">
+
+      <label>Fast Moving Average (20)</label>
+      <input id="maFast" type="number" step="0.01">
+
+      <label>Slow Moving Average (50)</label>
+      <input id="maSlow" type="number" step="0.01">
+
+      <label>Long Moving Average (200)</label>
+      <input id="ma200" type="number" step="0.01">
+
+      <label>Timeframe</label>
+      <select id="timeframe">
+        <option value="5m">5 minutes</option>
+        <option value="15m">15 minutes</option>
+        <option value="1h">1 hour</option>
+        <option value="4h">4 hours</option>
+        <option value="daily">Daily</option>
+      </select>
+
+      <h2>3. Pattern and reversal</h2>
+      <label>Pattern</label>
+      <select id="pattern">
+        <option value="none">Nothing clear</option>
+        <option value="doubleBottom">Double Bottom</option>
+        <option value="roundingBottom">Rounding Bottom</option>
+        <option value="doubleTop">Double Top</option>
+        <option value="roundingTop">Rounding Top</option>
+      </select>
+
+      <label>Strong reversal candle at turning point?</label>
+      <select id="reversal">
+        <option value="no">No</option>
+        <option value="yes">Yes</option>
+      </select>
+
+      <label>Reaction at clean even number? (100, 105, 110, etc.)</label>
+      <select id="evenReaction">
+        <option value="no">No</option>
+        <option value="yes">Yes</option>
+      </select>
+
+      <button id="findSetupBtn">Find Setup</button>
+      <div id="output" class="result"></div>
+
+      <div class="gf-links">
+        <button onclick="window.location.href='options.html'">Go to Options Picker →</button>
+        <button onclick="window.location.href='simulator.html'">Go to Simulator →</button>
+      </div>
+    </section>
   </main>
 </body>
 </html>
