@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Golden Simulator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="gold-theme">
+  <main class="layout">
+    <section class="left">
+      <h1>Simulator</h1>
+      <div id="drop-zone" class="drop-zone">
+        <p>Drag & drop Webull chart screenshot here<br>or click to upload.</p>
+      </div>
+      <input type="file" id="file-input" accept="image/*" style="display:none;">
+      <p id="sim-status"></p>
+      <div id="sim-output"></div>
+      <p><a href="options.html">Go to Options Idea →</a></p>
+    </section>
+    <section class="right">
+      <canvas id="sim-canvas" width="900" height="400"></canvas>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+  <script type="module" src="core.js"></script>
+  <script type="module" src="simulator.js"></script>
+</body>
+</html>
