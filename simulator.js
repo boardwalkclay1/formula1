@@ -1,5 +1,5 @@
 // simulator.js
-import { parseChartText, decideTrade, simulateFuture } from './core.js';
+import { parseChartText, decideTrade, simulateFuture } from './core-logic.js';
 
 function drawSimulation(canvasId, data, decision) {
   const canvas = document.getElementById(canvasId);
@@ -28,18 +28,19 @@ function drawSimulation(canvasId, data, decision) {
     return h - pad - ((p - minP) / (maxP - minP)) * (h - pad * 2);
   }
 
-  // NOW price marker
+  // NOW marker
   ctx.fillStyle = "#d4af37";
   ctx.beginPath();
-  ctx.arc(w * 0.3, yFor(price), 5, 0, Math.PI * 2);
+  ctx.arc(w * 0.25, yFor(price), 5, 0, Math.PI * 2);
   ctx.fill();
 
-  // Future line
-  ctx.strokeStyle = decision.valid ? "#3cff9d" : "#999";
+  // future path
+  ctx.strokeStyle = decision.direction === "call" ? "#3cff9d" :
+                    decision.direction === "put"  ? "#ff4b4b" : "#999";
   ctx.lineWidth = 3;
   ctx.beginPath();
   future.forEach((p, i) => {
-    const x = w * 0.3 + (i / (future.length - 1 || 1)) * (w * 0.6);
+    const x = w * 0.25 + (i / (future.length - 1 || 1)) * (w * 0.6);
     const y = yFor(p);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
@@ -60,28 +61,28 @@ function handleText(text) {
 
   const decision = decideTrade(data);
 
-  // Save for options page
-  localStorage.setItem("gf_data", JSON.stringify(data));
-  localStorage.setItem("gf_decision", JSON.stringify(decision));
-
   const out = document.getElementById("sim-output");
-  if (decision.valid) {
+  const logEl = document.getElementById("sim-log");
+
+  if (decision.direction === "none") {
+    out.innerHTML = `
+      <h2>No Simple Trade</h2>
+      <p>The rules did not find a clean, obvious setup.</p>
+    `;
+  } else {
+    const dirText = decision.direction === "call" ? "CALL (upside)" : "PUT (downside)";
+    const waitText = decision.wait ? "WAIT for price to come back to your level." : "OK to ENTER near this level.";
     out.innerHTML = `
       <h2>Prediction</h2>
-      <p><strong>${decision.direction.toUpperCase()}</strong> – golden rules say this is the side to be on.</p>
+      <p><strong>Direction:</strong> ${dirText}</p>
       <p><strong>Entry:</strong> ${decision.entry}</p>
       <p><strong>Stop loss:</strong> ${decision.stop}</p>
       <p><strong>Target:</strong> ${decision.target}</p>
-      <p><strong>Wait or Enter:</strong> ${decision.wait ? "WAIT for a better price" : "OK to ENTER near this level"}</p>
-      <h3>Reasoning</h3>
-      <ul>${decision.notes.map(n => `<li>${n}</li>`).join("")}</ul>
-    `;
-  } else {
-    out.innerHTML = `
-      <h2>No Simple Trade</h2>
-      <ul>${decision.notes.map(n => `<li>${n}</li>`).join("")}</ul>
+      <p><strong>Plan:</strong> ${waitText}</p>
     `;
   }
+
+  logEl.textContent = decision.log.join("\n");
 
   drawSimulation("sim-canvas", data, decision);
 }
@@ -102,22 +103,29 @@ function setupDropZone() {
   const fileInput = document.getElementById("file-input");
   const status = document.getElementById("sim-status");
 
-  zone.addEventListener("dragover", e => {
-    e.preventDefault();
+  ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
+    zone.addEventListener(eventName, e => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+
+  zone.addEventListener("dragover", () => {
     zone.classList.add("drag-over");
   });
-  zone.addEventListener("dragleave", e => {
-    e.preventDefault();
+
+  zone.addEventListener("dragleave", () => {
     zone.classList.remove("drag-over");
   });
+
   zone.addEventListener("drop", e => {
-    e.preventDefault();
     zone.classList.remove("drag-over");
     const file = e.dataTransfer.files[0];
     if (file) runOCR(file);
   });
 
   zone.addEventListener("click", () => fileInput.click());
+
   fileInput.addEventListener("change", e => {
     const file = e.target.files[0];
     if (file) runOCR(file);
