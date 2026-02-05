@@ -85,6 +85,9 @@ function handleText(text) {
   logEl.textContent = decision.notes.join("\n");
 
   drawSimulation("sim-canvas", data, decision);
+
+  // Save for options page
+  localStorage.setItem("gf_decision", JSON.stringify(decision));
 }
 
 function runOCR(file) {
@@ -98,41 +101,11 @@ function runOCR(file) {
   });
 }
 
-function setupDropZone() {
-  const zone = document.getElementById("drop-zone");
+document.addEventListener("DOMContentLoaded", () => {
   const fileInput = document.getElementById("file-input");
-  const status = document.getElementById("sim-status");
-
-  // BLOCK ALL DEFAULT BROWSER BEHAVIOR
-  ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
-    window.addEventListener(eventName, e => {
-      e.preventDefault();
-      e.stopPropagation();
-    }, { passive: false });
-  });
-
-  zone.addEventListener("dragover", () => {
-    zone.classList.add("drag-over");
-  });
-
-  zone.addEventListener("dragleave", () => {
-    zone.classList.remove("drag-over");
-  });
-
-  zone.addEventListener("drop", e => {
-    zone.classList.remove("drag-over");
-    const file = e.dataTransfer.files[0];
-    if (file) runOCR(file);
-  });
-
-  zone.addEventListener("click", () => fileInput.click());
 
   fileInput.addEventListener("change", e => {
     const file = e.target.files[0];
     if (file) runOCR(file);
   });
-
-  status.textContent = "Drag & drop a Webull screenshot here, or click to upload.";
-}
-
-document.addEventListener("DOMContentLoaded", setupDropZone);
+});
