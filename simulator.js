@@ -1,5 +1,5 @@
 // simulator.js
-import { parseChartText, decideTrade, simulateFuture } from './core-logic.js';
+import { parseChartText, decideTrade, simulateFuture } from './core.js';
 
 function drawSimulation(canvasId, data, decision) {
   const canvas = document.getElementById(canvasId);
@@ -82,7 +82,7 @@ function handleText(text) {
     `;
   }
 
-  logEl.textContent = decision.log.join("\n");
+  logEl.textContent = decision.notes.join("\n");
 
   drawSimulation("sim-canvas", data, decision);
 }
@@ -103,11 +103,12 @@ function setupDropZone() {
   const fileInput = document.getElementById("file-input");
   const status = document.getElementById("sim-status");
 
+  // BLOCK ALL DEFAULT BROWSER BEHAVIOR
   ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
-    zone.addEventListener(eventName, e => {
+    window.addEventListener(eventName, e => {
       e.preventDefault();
       e.stopPropagation();
-    });
+    }, { passive: false });
   });
 
   zone.addEventListener("dragover", () => {
