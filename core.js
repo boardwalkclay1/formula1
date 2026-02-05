@@ -9,9 +9,9 @@ export function nextEvenDown(p)    { return Math.floor(p / 5) * 5; }
 export function parseChartText(raw) {
   let text = raw
     .replace(/\s+/g, ' ')
-    .replace(/–|—/g, '-')                      
-    .replace(/[^0-9a-zA-Z\.\:\-\/ ]/g, '')     
-    .replace(/(\d)\s+(\d)/g, '$1$2');          
+    .replace(/–|—/g, '-')
+    .replace(/[^0-9a-zA-Z\.\:\-\/ ]/g, '')
+    .replace(/(\d)\s+(\d)/g, '$1$2');
 
   const out = {};
 
@@ -75,58 +75,6 @@ export function detectBullFlag(data) {
 // ---------- RULE SYSTEM ----------
 const rules = [];
 export function addRule(rule) { rules.push(rule); }
-
-// Rule 1: Golden Bullish Flag
-addRule({
-  name: "Bullish Flag Golden Play",
-  check(data, notes) {
-    const flag = detectBullFlag(data);
-    if (!flag.isFlag) return null;
-
-    notes.push(...flag.notes);
-
-    const { price, dayHigh, dayLow } = data;
-    const entry = nextEvenUp(price);
-    const stop  = (entry * 0.8).toFixed(2);
-    const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
-    const target = (dayHigh + range * 0.5).toFixed(2);
-
-    const wait = price > entry * 1.02;
-
-    return { direction: "call", entry, stop, target, wait };
-  }
-});
-
-// Rule 2: Basic MA Trend
-addRule({
-  name: "Basic MA Trend",
-  check(data, notes) {
-    const { price, maFast, maSlow, dayHigh, dayLow } = data;
-    if ([price, maFast, maSlow].some(v => v == null || isNaN(v))) return null;
-
-    let direction = "none";
-    if (maFast > maSlow && price > maFast) direction = "call";
-    if (maFast < maSlow && price < maFast) direction = "put";
-    if (direction === "none") return null;
-
-    let entry, stop, target, wait = false;
-    const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
-
-    if (direction === "call") {
-      entry = nextEvenUp(price);
-      stop = (entry * 0.8).toFixed(2);
-      target = (price + range).toFixed(2);
-      wait = price > entry * 1.02;
-    } else {
-      entry = nextEvenDown(price);
-      stop = (entry * 1.2).toFixed(2);
-      target = (price - range).toFixed(2);
-      wait = price < entry * 0.98;
-    }
-
-    return { direction, entry, stop, target, wait };
-  }
-});
 
 // ---------- DECISION ENGINE ----------
 export function decideTrade(data) {
