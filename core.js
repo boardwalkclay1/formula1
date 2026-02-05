@@ -94,84 +94,131 @@ export function detectBullFlag(data) {
   return { isFlag: true, notes };
 }
 
-// ---------- GOLDEN DECISION ENGINE ----------
+// ---------- RULE SYSTEM (PLUGGABLE LOGIC) ----------
+const rules = [];
+
+// expose a way to add more rules later
+export function addRule(rule) {
+  rules.push(rule);
+}
+
+// 1) Bullish flag golden play (your golden setup)
+addRule({
+  name: "Bullish Flag Golden Play",
+  check(data, notes) {
+    const flag = detectBullFlag(data);
+    if (!flag.isFlag) return null;
+
+    notes.push(...flag.notes);
+    notes.push("FLAG DETECTED → GOLDEN PLAY continuation setup.");
+
+    const { price, dayHigh, dayLow } = data;
+    const entry = nextEvenUp(price);
+    const stop  = (entry * 0.8).toFixed(2);
+    const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
+    const target = (dayHigh + range * 0.5 || price * 1.03).toFixed(2);
+
+    const wait = price > entry * 1.02;
+    if (wait) notes.push("Price is already stretched above the clean entry → better to wait for a pullback.");
+
+    return {
+      direction: "call",
+      entry,
+      stop,
+      target,
+      wait
+    };
+  }
+});
+
+// 2) Basic MA trend rule (fallback)
+addRule({
+  name: "Basic MA Trend",
+  check(data, notes) {
+    const { price, maFast, maSlow, ma200, dayHigh, dayLow } = data;
+    if ([price, maFast, maSlow].some(v => v == null || isNaN(v))) {
+      notes.push("Trend rule skipped: missing price or MAs.");
+      return null;
+    }
+
+    let direction = "none";
+
+    if (maFast > maSlow && price > maFast) {
+      direction = "call";
+      notes.push("Fast MA above slow MA and price above both → up move.");
+    } else if (maFast < maSlow && price < maFast) {
+      direction = "put";
+      notes.push("Fast MA below slow MA and price below both → down move.");
+    } else {
+      notes.push("Trend rule: moving averages do not clearly show up or down.");
+      return null;
+    }
+
+    if (!isNaN(ma200)) {
+      if (maFast > maSlow && maFast > ma200) notes.push("Golden cross style uptrend.");
+      if (maFast < maSlow && maFast < ma200) notes.push("Death cross style downtrend.");
+    }
+
+    let entry, stop, target, wait = false;
+
+    if (direction === "call") {
+      entry = nextEvenUp(price);
+      stop  = (entry * 0.8).toFixed(2);
+      const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
+      target = (price + range).toFixed(2);
+      if (price > entry * 1.02) {
+        wait = true;
+        notes.push("Price is already stretched above the clean entry → better to wait for a pullback.");
+      }
+    } else {
+      entry = nextEvenDown(price);
+      stop  = (entry * 1.2).toFixed(2);
+      const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
+      target = (price - range).toFixed(2);
+      if (price < entry * 0.98) {
+        wait = true;
+        notes.push("Price is already stretched below the clean entry → better to wait for a bounce.");
+      }
+    }
+
+    return { direction, entry, stop, target, wait };
+  }
+});
+
+// ---------- GOLDEN DECISION ENGINE (USES RULES) ----------
 export function decideTrade(data) {
   const notes = [];
-  const { price, maFast, maSlow, ma200, dayHigh, dayLow } = data;
 
-  if ([price, maFast, maSlow].some(v => v == null || isNaN(v))) {
+  if ([data.price, data.maFast, data.maSlow].some(v => v == null || isNaN(v))) {
     notes.push("Could not read price and moving averages clearly.");
     return { direction: "none", valid: false, entry: "", stop: "", target: "", wait: true, notes };
   }
 
-  // Base MA direction
-  let direction = "none";
-  if (maFast > maSlow && price > maFast) {
-    direction = "call";
-    notes.push("Fast MA above slow MA and price above both → up move.");
-  } else if (maFast < maSlow && price < maFast) {
-    direction = "put";
-    notes.push("Fast MA below slow MA and price below both → down move.");
-  } else {
-    notes.push("Moving averages do not clearly show up or down.");
-  }
-
-  if (!isNaN(ma200)) {
-    if (maFast > maSlow && maFast > ma200) notes.push("Golden cross style uptrend.");
-    if (maFast < maSlow && maFast < ma200) notes.push("Death cross style downtrend.");
-  }
-
-  // Flag override (golden play)
-  const flag = detectBullFlag(data);
-  if (flag.isFlag) {
-    direction = "call";
-    notes.push(...flag.notes);
-    notes.push("FLAG DETECTED → GOLDEN PLAY continuation setup.");
-  }
-
-  // If still none, no trade
-  if (direction === "none") {
-    return { direction, valid: false, entry: "", stop: "", target: "", wait: true, notes };
-  }
-
-  // Entry / stop / target
-  let entry, stop, target, wait = false;
-
-  if (direction === "call") {
-    entry = nextEvenUp(price);
-    stop = (entry * 0.8).toFixed(2);
-    // simple target: previous high + half the day range
-    const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
-    target = (dayHigh + range * 0.5 || price * 1.03).toFixed(2);
-    notes.push(`CALL idea. Entry near next even number above: ${entry}.`);
-    notes.push(`Stop about 20% below entry: ${stop}.`);
-    notes.push(`Target around: ${target}.`);
-    // if price already far above entry, suggest waiting
-    if (price > entry * 1.02) {
-      wait = true;
-      notes.push("Price is already stretched above the clean entry → better to wait for a pullback.");
-    }
-  } else {
-    entry = nextEvenDown(price);
-    stop = (entry * 1.2).toFixed(2);
-    const range = (dayHigh && dayLow) ? (dayHigh - dayLow) : price * 0.03;
-    target = (dayLow - range * 0.5 || price * 0.97).toFixed(2);
-    notes.push(`PUT idea. Entry near next even number below: ${entry}.`);
-    notes.push(`Stop about 20% above entry: ${stop}.`);
-    notes.push(`Target around: ${target}.`);
-    if (price < entry * 0.98) {
-      wait = true;
-      notes.push("Price is already stretched below the clean entry → better to wait for a bounce.");
+  for (const rule of rules) {
+    notes.push(`Checking rule: ${rule.name}`);
+    const res = rule.check(data, notes);
+    if (res) {
+      notes.push(`Rule fired: ${rule.name}`);
+      return {
+        direction: res.direction,
+        valid: true,
+        entry: res.entry,
+        stop: res.stop,
+        target: res.target,
+        wait: !!res.wait,
+        notes
+      };
     }
   }
 
+  notes.push("No rule fired → no simple trade.");
   return {
-    direction,
-    valid: true,
-    entry,
-    stop,
-    target,
-    wait,
+    direction: "none",
+    valid: false,
+    entry: "",
+    stop: "",
+    target: "",
+    wait: true,
     notes
   };
 }
