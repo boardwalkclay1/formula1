@@ -1,18 +1,18 @@
-// options.js — Golden Chain + Golden Chart
-import { pickOptionsContract, dynamicStep } from "./core.js";
+// modules/options.js — automatic Golden Options Terminal
+import { pickOptionsContract, dynamicStep, simulateFuture } from "./core.js";
 import "./rules.js";
 
 function drawGoldenChart(canvasId, data, decision) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
 
-  const price   = data.price   || 0;
-  const dayHigh = data.dayHigh || price * 1.02;
-  const dayLow  = data.dayLow  || price * 0.98;
+  const price   = Number(data.price)   || 0;
+  const dayHigh = Number(data.dayHigh) || price * 1.02;
+  const dayLow  = Number(data.dayLow)  || price * 0.98;
 
   const entry  = Number(decision.entry || price);
-  const stop   = Number(decision.stop || price * 0.95);
+  const stop   = Number(decision.stop  || price * 0.95);
   const target = Number(decision.target || price * 1.05);
 
   const minP = Math.min(dayLow, stop, price);
@@ -67,79 +67,147 @@ function drawGoldenChart(canvasId, data, decision) {
   ctx.stroke();
   ctx.fillStyle = "#4bb8ff";
   ctx.fillText(`Target ${target.toFixed(2)}`, w * 0.1, yFor(target) - 5);
+
+  // Future path (Golden prediction)
+  const future = simulateFuture(data, decision) || [];
+  if (future.length) {
+    ctx.strokeStyle = decision.direction === "call" ? "#3cff9d" :
+                      decision.direction === "put"  ? "#ff4b4b" : "#999";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    future.forEach((p, i) => {
+      const x = w * 0.2 + (i / (future.length - 1 || 1)) * (w * 0.6);
+      const y = yFor(p);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
+function buildFiveStrikeLadder(entry, direction, ticker, plan) {
+  const step = dynamicStep(entry);
+  const strikes = [
+    entry - 2 * step,
+    entry - 1 * step,
+    entry,
+    entry + 1 * step,
+    entry + 2 * step
+  ].map(s => Math.round(s * 100) / 100);
+
+  const rec = plan.recommended;
+  return strikes.map((strike, idx) => {
+    const label = `${ticker} ${strike} ${direction.toUpperCase()}`;
+    const isRec = rec && strike === rec.strike;
+    const position = ["Deep ITM", "ITM", "ATM", "OTM", "Deep OTM"][idx];
+
+    let guidance = "";
+    if (isRec) {
+      guidance = "This is the balance between risk, cost, and alignment with the setup. This is the one I’d take.";
+    } else if (idx < 2) {
+      guidance = "Safer but more expensive. Slower move, less theta burn, but you pay for safety.";
+    } else if (idx === 2) {
+      guidance = "Pure alignment with the level. Cleanest read, but you must respect your stop.";
+    } else if (idx === 3) {
+      guidance = "More aggressive. Cheaper, but you need the move to actually happen.";
+    } else {
+      guidance = "Lottery ticket territory. Only makes sense if the setup is extremely strong — usually I avoid this.";
+    }
+
+    return { strike, label, isRec, position, guidance };
+  });
+}
+
+function buildDisciplineBlock(decision) {
+  const dirText = decision.direction === "call" ? "CALL (upside)" :
+                  decision.direction === "put"  ? "PUT (downside)" :
+                  "No clear direction";
+
+  const strengthHint = decision.valid
+    ? "This setup passed my filters. That doesn’t mean it’s guaranteed — it means it’s clean enough to consider."
+    : "This setup did not pass my filters. Standing aside is still a decision, and often the best one.";
+
+  return `
+    <p><strong>Direction:</strong> ${dirText}</p>
+    <p>${strengthHint}</p>
+    <p>
+      Your job is not to predict the future — it’s to follow the plan. If you take this trade,
+      you respect the entry, you respect the stop, and you don’t chase if price runs away.
+    </p>
+    <p>
+      Never size a trade based on hope. Size it based on the distance between entry and stop,
+      and only risk what you’re truly willing to lose on a single idea.
+    </p>
+  `;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   const decision = JSON.parse(localStorage.getItem("gf_decision") || "{}");
   const data = JSON.parse(localStorage.getItem("gf_data") || "{}");
 
-  const runBtn = document.getElementById("runOptions");
-  const recEl = document.getElementById("opt-recommended");
-  const chainEl = document.getElementById("opt-chain");
-  const notesEl = document.getElementById("opt-notes");
+  const summaryEl     = document.getElementById("opt-summary");
+  const recEl         = document.getElementById("opt-recommended");
+  const chainEl       = document.getElementById("opt-chain");
+  const notesEl       = document.getElementById("opt-notes");
+  const disciplineEl  = document.getElementById("opt-discipline");
 
-  // Draw initial chart (even if no trade)
-  drawGoldenChart("opt-canvas", data, decision || {});
-
-  runBtn.addEventListener("click", () => {
-    const days = Number(document.getElementById("expiry").value);
-    const ticker = document.getElementById("ticker").value.trim().toUpperCase() || "TICKER";
-
-    // If no valid trade, we still give guidance: stand aside
-    if (!decision || !decision.valid) {
-      recEl.innerHTML = `
-        <h2>No Trade – Stand Aside</h2>
-        <p>The simulator did not find a clean, high‑conviction setup.</p>
-        <p>This is still a decision: choosing not to trade is part of being a professional.</p>
-      `;
-      chainEl.innerHTML = "";
-      notesEl.innerHTML = `
-        <p>No rule fired strongly enough to justify risk.</p>
-        <p>Wait for a clearer alignment of price, moving averages, and pattern before touching options.</p>
-      `;
-      return;
-    }
-
-    const plan = pickOptionsContract(decision, days, ticker);
-
-    // Draw chart with entry/stop/target
-    drawGoldenChart("opt-canvas", data, decision);
-
-    // Recommended contract
-    const rec = plan.recommended;
-    recEl.innerHTML = `
-      <div class="opt-card opt-recommended">
-        <h2>⭐ Recommended Contract</h2>
-        <p><strong>${rec.label}</strong></p>
-        <p>Moneyness: ${rec.moneyness}</p>
-        <p>${rec.styleHint}</p>
-      </div>
+  if (!decision || !decision.entry || !decision.direction) {
+    summaryEl.innerHTML = `
+      <h2>No Active Setup</h2>
+      <p>
+        I don’t have a valid trade from the simulator yet. Go back, upload a chart, and let me
+        read it first.
+      </p>
     `;
+    return;
+  }
 
-    // Full chain around entry
-    const entry = Number(decision.entry);
-    const step = dynamicStep(entry);
-    const strikes = [];
-    for (let i = -7; i <= 7; i++) {
-      strikes.push(Math.round((entry + i * step) * 100) / 100);
-    }
+  // Ticker: try to infer, fallback to generic
+  const ticker = (decision.ticker || data.ticker || "TICKER").toUpperCase();
 
-    chainEl.innerHTML = strikes.map(strike => {
-      const label = `${ticker} ${strike} ${decision.direction.toUpperCase()}`;
-      const isRec = strike === rec.strike;
-      const moneyness =
-        decision.direction === "call"
-          ? (strike < entry ? "ITM" : strike === entry ? "ATM" : "OTM")
-          : (strike > entry ? "ITM" : strike === entry ? "ATM" : "OTM");
+  // Draw Golden Chart
+  drawGoldenChart("opt-canvas", data, decision);
 
-      return `
-        <div class="opt-card ${isRec ? "opt-highlight" : ""}">
-          <p><strong>${label}</strong></p>
-          <p>${moneyness}</p>
-        </div>
-      `;
-    }).join("");
+  // Build options plan from your core
+  const plan = pickOptionsContract(decision, null, ticker); // expiration logic handled inside core
 
-    notesEl.innerHTML = plan.notes.map(n => `<p>${n}</p>`).join("");
-  });
+  // Summary
+  const dirText = decision.direction === "call" ? "CALL (upside)" : "PUT (downside)";
+  summaryEl.innerHTML = `
+    <h2>Clayvonte’s Options Read</h2>
+    <p><strong>Direction:</strong> ${dirText}</p>
+    <p><strong>Entry:</strong> ${decision.entry}</p>
+    <p><strong>Stop:</strong> ${decision.stop}</p>
+    <p><strong>Target:</strong> ${decision.target}</p>
+  `;
+
+  // Recommended contract
+  const rec = plan.recommended;
+  recEl.innerHTML = `
+    <div class="opt-card opt-recommended">
+      <p><strong>${rec.label}</strong></p>
+      <p>Moneyness: ${rec.moneyness}</p>
+      <p>${rec.styleHint}</p>
+    </div>
+ `;
+
+  // 5‑strike ladder centered on ENTRY
+  const entry = Number(decision.entry);
+  const ladder = buildFiveStrikeLadder(entry, decision.direction, ticker, plan);
+
+  chainEl.innerHTML = ladder.map(item => `
+    <div class="opt-card ${item.isRec ? "opt-highlight" : ""}">
+      <p><strong>${item.label}</strong></p>
+      <p>${item.position}</p>
+      <p>${item.guidance}</p>
+    </div>
+  `).join("");
+
+  // Notes from engine
+  notesEl.innerHTML = (plan.notes || decision.notes || [])
+    .map(n => `<p>${n}</p>`)
+    .join("");
+
+  // Discipline block
+  disciplineEl.innerHTML = buildDisciplineBlock(decision);
 });
