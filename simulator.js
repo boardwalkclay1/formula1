@@ -1,19 +1,21 @@
 // modules/simulator.js
-// Advanced, extended, mentor-grade simulator with deep observation, robust OCR pipeline,
-// drag/drop auto-read, image preprocessing, confidence scoring, retry logic, and verbose narrative.
-// Designed to feed the automatic Golden Options Terminal (options.html) via localStorage.
-//
-// Drop an image anywhere or click the file input. The engine will:
-//  - Preprocess image (resize, grayscale, contrast) for better OCR
-//  - Run Tesseract with progressive retries and language/config tuning
-//  - Parse text with core.parseChartText
-//  - Run rule engine (decideTrade) and many detectors for deep observations
-//  - Produce a long, structured narrative and confidence metrics
-//  - Draw a cinematic Golden Chart + future simulation
+// Advanced Simulator — full, extended, mentor-grade engine
+// Responsibilities:
+//  - Accept dropped or selected image
+//  - Preprocess image for OCR
+//  - Run OCR with retries and confidence scoring
+//  - Parse chart text via core.parseChartText
+//  - Run rule engine via core.decideTrade
+//  - Infer price-to-Y mapping from axis labels and numeric text in the image
+//  - Build an extremely long, layered narrative and observations
+//  - Render cinematic gold chart overlaying entry, stop, target and future simulation
 //  - Save gf_data and gf_decision to localStorage for options page
-//  - Optionally accept an options-chain image for OCR and refinement
+//  - Provide detailed debug output in the UI
 //
-// NOTE: This file expects core.js to export many detectors and helpers used below.
+// Requires these modules in /modules:
+//  - core.js (exports parseChartText, decideTrade, simulateFuture, detect* helpers)
+//  - goldenChartAuto.js (exports renderGoldenChartFromFile or internal painting helpers)
+//  - Tesseract loaded globally via script tag in HTML
 
 const Tesseract = window.Tesseract;
 
@@ -28,537 +30,486 @@ import {
   detectSupportResistance,
   detectDoubleTopBottom,
   detectRounding,
-  dynamicStep,
-  nearestEven
-} from "./core.js";
-import "./rules.js";
+  dynamicStep
+} from './core.js';
 
-// -----------------------------
+// If you placed the auto renderer module, import it; otherwise we will use internal painting
+import { renderGoldenChartFromFile } from './goldenChartAuto.js';
+
 // Configuration
-// -----------------------------
-const OCR_CONFIG = {
-  lang: "eng",
-  // Tesseract config options to improve numeric recognition
-  tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/: ",
-  preserve_interword_spaces: "1",
-  retryCount: 2,
-  retryDelayMs: 600
-};
+const FILE_INPUT_ID = 'file-input';
+const STATUS_ID = 'sim-status';
+const CANVAS_ID = 'sim-canvas';
+const OUTPUT_ID = 'sim-output';
+const LOG_ID = 'sim-log';
+const MAX_DIM = 1600;
+const OCR_RETRIES = 2;
+const OCR_RETRY_DELAY = 600;
 
-const CANVAS_ID = "sim-canvas";
-const STATUS_ID = "sim-status";
-const FILE_INPUT_ID = "file-input";
-const OUTPUT_ID = "sim-output";
-const LOG_ID = "sim-log";
-const MAX_IMAGE_DIM = 1600; // max width/height for preprocessing
-
-// -----------------------------
 // Utilities
-// -----------------------------
-function nowISO() {
-  return new Date().toISOString();
-}
+function nowISO() { return new Date().toISOString(); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function safeNum(v, fallback = null) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function safeNumber(v, fallback = null) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function clamp(v, a, b) {
-  return Math.max(a, Math.min(b, v));
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// -----------------------------
-// Image Preprocessing Helpers
-// -----------------------------
-async function loadImageFromFile(file) {
+// Image helpers
+function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = (e) => {
-      URL.revokeObjectURL(url);
-      reject(e);
-    };
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
     img.src = url;
   });
 }
 
-function preprocessImageToCanvas(img, maxDim = MAX_IMAGE_DIM) {
-  // Resize to max dimension while preserving aspect ratio, convert to grayscale and increase contrast
+function preprocessImage(img, maxDim = MAX_DIM) {
   const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
   const w = Math.round(img.width * ratio);
   const h = Math.round(img.height * ratio);
-
-  const canvas = document.createElement("canvas");
+  const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d");
-
-  // Draw original
+  const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0, w, h);
 
-  // Get image data and apply simple grayscale + contrast stretch
+  // mild grayscale + contrast stretch
   const id = ctx.getImageData(0, 0, w, h);
-  const data = id.data;
-
-  // Convert to luminance and apply contrast
-  // Compute mean luminance
+  const d = id.data;
   let sum = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const lum = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
     sum += lum;
   }
-  const mean = sum / (data.length / 4);
-  const contrast = 1.2; // mild contrast boost
-  const brightnessShift = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    let lum = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
-    // stretch around mean
-    lum = (lum - mean) * contrast + mean + brightnessShift;
+  const mean = sum / (d.length / 4);
+  const contrast = 1.12;
+  for (let i = 0; i < d.length; i += 4) {
+    let lum = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+    lum = (lum - mean) * contrast + mean;
     lum = clamp(Math.round(lum), 0, 255);
-    data[i] = data[i+1] = data[i+2] = lum;
-    // keep alpha
+    d[i] = d[i+1] = d[i+2] = lum;
   }
   ctx.putImageData(id, 0, 0);
-
-  // Optional: apply sharpening or thresholding if needed (kept simple here)
   return canvas;
 }
 
-// -----------------------------
-// OCR Pipeline with retries and progressive config
-// -----------------------------
-async function runTesseractOnCanvas(canvas, config = OCR_CONFIG) {
-  // Convert canvas to blob for Tesseract
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) return reject(new Error("Failed to convert canvas to blob"));
-      try {
-        const workerConfig = {
-          lang: config.lang,
-          tessedit_char_whitelist: config.tessedit_char_whitelist,
-          preserve_interword_spaces: config.preserve_interword_spaces
-        };
-
-        // Use Tesseract.recognize directly for simplicity
-        const result = await Tesseract.recognize(blob, workerConfig.lang, {
-          tessedit_char_whitelist: workerConfig.tessedit_char_whitelist,
-          preserve_interword_spaces: workerConfig.preserve_interword_spaces
-        });
-        resolve(result);
-      } catch (err) {
-        reject(err);
-      }
-    }, "image/png");
-  });
-}
-
-async function ocrWithRetries(canvas, maxRetries = OCR_CONFIG.retryCount, delayMs = OCR_CONFIG.retryDelayMs) {
+// OCR pipeline with retries and average confidence
+async function ocrCanvasWithRetries(canvas, retries = OCR_RETRIES, delay = OCR_RETRY_DELAY) {
   let attempt = 0;
   let lastErr = null;
-  while (attempt <= maxRetries) {
+  while (attempt <= retries) {
     try {
-      const res = await runTesseractOnCanvas(canvas, OCR_CONFIG);
-      // Basic confidence check: Tesseract returns words with confidences; compute average
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      const res = await Tesseract.recognize(blob, 'eng', {
+        tessedit_char_whitelist: '0123456789.,%$-–—ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ',
+        preserve_interword_spaces: '1'
+      });
       const words = res?.data?.words || [];
       const avgConf = words.length ? (words.reduce((s, w) => s + (w.confidence || 0), 0) / words.length) : 0;
-      return { text: res?.data?.text || "", avgConf, raw: res };
+      return { text: res?.data?.text || '', words, avgConf, raw: res };
     } catch (err) {
       lastErr = err;
       attempt++;
-      if (attempt <= maxRetries) await sleep(delayMs);
+      if (attempt <= retries) await sleep(delay);
     }
   }
   throw lastErr;
 }
 
-// -----------------------------
-// Deep Narrative Builder
-// -----------------------------
-function buildLongNarrative(data, decision, ocrMeta = {}) {
-  // Compose a long, layered narrative using detectors and decision context.
-  // This intentionally produces a verbose, mentor-style output with timestamps, confidence, and step-by-step reasoning.
+// Axis extraction from OCR words
+function normalizeWords(words) {
+  return words.map(w => {
+    if (w.bbox) return { text: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1, conf: w.confidence || 0 };
+    if (w.x !== undefined && w.y !== undefined && w.w !== undefined && w.h !== undefined) {
+      return { text: w.text, x0: w.x, y0: w.y, x1: w.x + w.w, y1: w.y + w.h, conf: w.confidence || 0 };
+    }
+    return { text: w.text || '', x0: 0, y0: 0, x1: 0, y1: 0, conf: w.confidence || 0 };
+  }).filter(Boolean);
+}
+
+function extractAxisNumbers(words, canvasW) {
+  const leftZone = canvasW * 0.18;
+  const rightZone = canvasW * 0.82;
+  const numRe = /[-+]?\$?\d{1,3}(?:[,\d]{0,})?(?:\.\d+)?%?/;
+  const left = [], right = [];
+  for (const w of words) {
+    const t = (w.text || '').replace(/\s+/g, '');
+    if (!t) continue;
+    const m = t.match(numRe);
+    if (!m) continue;
+    const raw = m[0].replace(/[$,%]/g, '').replace(/,/g, '');
+    const val = Number(raw);
+    if (!Number.isFinite(val)) continue;
+    const cx = (w.x0 + w.x1) / 2;
+    const cy = (w.y0 + w.y1) / 2;
+    if (cx <= leftZone) left.push({ val, x: cx, y: cy, raw: w.text, conf: w.conf });
+    else if (cx >= rightZone) right.push({ val, x: cx, y: cy, raw: w.text, conf: w.conf });
+  }
+  left.sort((a,b) => a.y - b.y);
+  right.sort((a,b) => a.y - b.y);
+  return { left, right };
+}
+
+// Build linear mapping price -> y using axis numbers (regression)
+function buildPriceToY(axisNums) {
+  if (!axisNums || axisNums.length < 2) return null;
+  const n = axisNums.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for (const p of axisNums) {
+    const x = p.val;
+    const y = p.y;
+    sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
+  }
+  const denom = (n * sumXX - sumX * sumX);
+  if (Math.abs(denom) < 1e-9) return null;
+  const a = (n * sumXY - sumX * sumY) / denom;
+  const b = (sumY - a * sumX) / n;
+  return (price) => a * price + b;
+}
+
+// Fallback mapping using parsed dayHigh/dayLow or price heuristics
+function fallbackPriceToY(parsed, canvasH) {
+  const price = safeNum(parsed.price, null);
+  const high = safeNum(parsed.dayHigh, null);
+  const low = safeNum(parsed.dayLow, null);
+  if (high != null && low != null && high !== low) {
+    const topY = canvasH * 0.08;
+    const bottomY = canvasH * 0.92;
+    return (p) => {
+      const t = (high - p) / (high - low);
+      return topY + t * (bottomY - topY);
+    };
+  }
+  if (price != null) {
+    const centerY = canvasH / 2;
+    const pxPerUnit = Math.max(0.5, Math.abs(price) * 0.01);
+    return (p) => centerY - (p - price) * pxPerUnit;
+  }
+  return null;
+}
+
+// Long narrative builder
+function buildLongNarrative(parsed, decision, detectors, ocrMeta) {
   const parts = [];
-  parts.push(`<div class="obs-meta"><small>Analysis time: ${nowISO()}</small></div>`);
-  parts.push(`<h3>Immediate read</h3>`);
-  parts.push(`<p>I read the chart text with an OCR confidence of <strong>${(ocrMeta.avgConf || 0).toFixed(1)}%</strong>. The parser extracted the following raw values (best-effort):</p>`);
-  parts.push(`<ul>`);
-  parts.push(`<li><strong>Price:</strong> ${safeNumber(data.price, "n/a")}</li>`);
-  parts.push(`<li><strong>Day high / low:</strong> ${safeNumber(data.dayHigh, "n/a")} / ${safeNumber(data.dayLow, "n/a")}</li>`);
-  parts.push(`<li><strong>MA20 / MA50 / MA200:</strong> ${safeNumber(data.maFast, "n/a")} / ${safeNumber(data.maSlow, "n/a")} / ${safeNumber(data.ma200, "n/a")}</li>`);
-  if (data.ticker) parts.push(`<li><strong>Ticker (parsed):</strong> ${data.ticker}</li>`);
+  parts.push(`<div style="color:#dcdcdc;font-size:13px">`);
+  parts.push(`<div style="color:#d4af37;font-weight:700;margin-bottom:8px">Golden Read — ${nowISO()}</div>`);
+
+  // OCR meta
+  parts.push(`<div style="color:#bdbdbd;margin-bottom:8px"><strong>OCR confidence</strong>: ${(ocrMeta.avgConf || 0).toFixed(1)}%</div>`);
+
+  // Parsed summary
+  parts.push(`<div style="margin-bottom:8px"><strong>Parsed snapshot</strong>:</div>`);
+  parts.push(`<ul style="color:#cfcfcf">`);
+  parts.push(`<li>Price: ${safeNum(parsed.price, 'n/a')}</li>`);
+  parts.push(`<li>Day High: ${safeNum(parsed.dayHigh, 'n/a')}</li>`);
+  parts.push(`<li>Day Low: ${safeNum(parsed.dayLow, 'n/a')}</li>`);
+  parts.push(`<li>MA20/MA50/MA200: ${safeNum(parsed.maFast,'n/a')} / ${safeNum(parsed.maSlow,'n/a')} / ${safeNum(parsed.ma200,'n/a')}</li>`);
+  if (parsed.ticker) parts.push(`<li>Ticker: ${parsed.ticker}</li>`);
   parts.push(`</ul>`);
 
-  // Structural observations
-  parts.push(`<h3>Structure & context</h3>`);
-  // Range and position
-  if (data.price && data.dayHigh && data.dayLow) {
-    const range = data.dayHigh - data.dayLow;
-    const pos = range > 0 ? (data.price - data.dayLow) / range : 0.5;
-    const posText =
-      pos < 0.2 ? "near the low of the day" :
-      pos < 0.4 ? "in the lower half of today’s range" :
-      pos < 0.6 ? "around the middle of today’s range" :
-      pos < 0.8 ? "in the upper half of today’s range" :
-                  "pressing near the high of the day";
-    parts.push(`<p>Price is ${posText}. The intraday range is ${range ? range.toFixed(2) : "n/a"} points.</p>`);
+  // Detectors
+  parts.push(`<div style="margin-top:8px"><strong>Structure observations</strong>:</div>`);
+  if (detectors.flag?.isFlag) {
+    parts.push(`<p style="color:#9fffbf">Bull flag detected — price holding upper range, tight MAs, consolidation ready for continuation.</p>`);
   } else {
-    parts.push(`<p>Not enough range data to compute intraday position precisely.</p>`);
+    parts.push(`<p style="color:#cfcfcf">No clear bull flag detected by the quick scan.</p>`);
+  }
+  if (detectors.maCluster?.clustered) {
+    parts.push(`<p style="color:#cfcfcf">MAs clustered — consolidation present; breakout potential when price chooses a side.</p>`);
+  }
+  if (detectors.even?.isNear) {
+    const side = detectors.even.isJustAbove ? 'just above' : detectors.even.isJustBelow ? 'just below' : 'near';
+    parts.push(`<p style="color:#cfcfcf">Price is ${side} an even level at ${detectors.even.nearest.toFixed(2)} — expect magnet/wall behavior.</p>`);
   }
 
-  // MA cluster
-  const maCluster = detectMACluster({ maFast: data.maFast, maSlow: data.maSlow, ma200: data.ma200, price: data.price });
-  if (maCluster.clustered) {
-    parts.push(`<p>Moving averages are tightly clustered (spread ≈ ${maCluster.spread?.toFixed(3)}). That often signals consolidation and a potential directional breakout once price chooses a side.</p>`);
-  } else {
-    parts.push(`<p>Moving averages are not tightly clustered. Expect more directional noise unless a clear breakout forms.</p>`);
-  }
-
-  // Bull flag
-  const flag = detectBullFlag(data);
-  if (flag.isFlag) {
-    parts.push(`<p><strong>Bull flag detected:</strong> ${flag.notes.join("; ")}</p>`);
-  }
-
-  // MA slope
-  // We don't have history here; if history is available in decision.context.history, use it
-  const slope = detectMASlope(decision?.context?.history || []);
-  if (slope) {
-    parts.push(`<p>MA slope: fastUp=${slope.fastUp}, slowUp=${slope.slowUp}, sharpMove=${slope.sharpMove}.</p>`);
-  }
-
-  // Even proximity
-  if (data.price) {
-    const even = detectEvenProximity(data.price);
-    if (even && even.isNear) {
-      parts.push(`<p>Price is ${even.isJustAbove ? "just above" : even.isJustBelow ? "just below" : "right on"} a key even level at <strong>${even.nearest.toFixed(2)}</strong>. These levels often act as short-term magnets or barriers.</p>`);
-    } else {
-      parts.push(`<p>Price is not especially close to a key even level.</p>`);
-    }
-  }
-
-  // Support/resistance (if history provided)
-  const sr = detectSupportResistance(decision?.context?.history || []);
-  if ((sr.supports || []).length || (sr.resistances || []).length) {
-    parts.push(`<p>Detected ${sr.supports.length} strong levels from history. These can be used as reference for stop placement or targets.</p>`);
-  }
-
-  // Double top/bottom & rounding
-  const db = detectDoubleTopBottom(decision?.context?.history || []);
-  if (db.doubleTop) parts.push(`<p>Double top pattern detected historically — caution on long entries near that zone.</p>`);
-  if (db.doubleBottom) parts.push(`<p>Double bottom pattern detected historically — potential reversal support.</p>`);
-  const rounding = detectRounding(decision?.context?.history || []);
-  if (rounding.roundingBottom) parts.push(`<p>Rounding bottom structure detected — accumulation phase possible.</p>`);
-  if (rounding.roundingTop) parts.push(`<p>Rounding top structure detected — distribution phase possible.</p>`);
-
-  // Decision summary
-  parts.push(`<h3>Engine decision summary</h3>`);
+  // Decision
+  parts.push(`<div style="margin-top:10px"><strong>Engine decision</strong>:</div>`);
   if (!decision.valid) {
-    parts.push(`<p>The rule engine did not find a clean setup. Notes:</p>`);
-    parts.push(`<ul>${(decision.notes || []).map(n => `<li>${n}</li>`).join("")}</ul>`);
-    parts.push(`<p><em>Recommendation:</em> Stand aside. Wait for clearer structure or a retest of a key level.</p>`);
+    parts.push(`<p style="color:#ffb3b3">No clean setup. The engine recommends standing aside until structure clarifies or price retests a key level.</p>`);
+    parts.push(`<ul style="color:#cfcfcf">${(decision.notes || []).map(n => `<li>${n}</li>`).join('')}</ul>`);
   } else {
-    parts.push(`<p>The engine found a valid setup with direction <strong>${decision.direction}</strong>.</p>`);
-    parts.push(`<ul>`);
-    parts.push(`<li><strong>Entry:</strong> ${decision.entry}</li>`);
-    parts.push(`<li><strong>Stop:</strong> ${decision.stop}</li>`);
-    parts.push(`<li><strong>Target:</strong> ${decision.target}</li>`);
-    parts.push(`</ul>`);
-    parts.push(`<p>Engine notes:</p>`);
-    parts.push(`<ul>${(decision.notes || []).map(n => `<li>${n}</li>`).join("")}</ul>`);
-    // Confidence heuristic: combine OCR confidence and structural signals
+    parts.push(`<p style="color:#bfffbf">Direction: <strong>${decision.direction.toUpperCase()}</strong></p>`);
+    parts.push(`<p style="color:#cfcfcf">Entry: ${decision.entry} • Stop: ${decision.stop} • Target: ${decision.target}</p>`);
+    parts.push(`<div style="color:#cfcfcf;margin-top:6px"><strong>Why this trade</strong>:</div>`);
+    parts.push(`<ul style="color:#cfcfcf">${(decision.notes || []).map(n => `<li>${n}</li>`).join('')}</ul>`);
+    // composite confidence heuristic
     const ocrConf = ocrMeta.avgConf || 0;
     let structuralScore = 50;
-    if (maCluster.clustered) structuralScore += 10;
-    if (flag.isFlag) structuralScore += 15;
+    if (detectors.maCluster?.clustered) structuralScore += 10;
+    if (detectors.flag?.isFlag) structuralScore += 15;
     if (!decision.wait) structuralScore += 10;
-    const combined = clamp(Math.round((ocrConf * 0.4) + (structuralScore * 0.6)), 0, 100);
-    parts.push(`<p><strong>Composite confidence:</strong> ${combined}% (OCR ${ocrConf.toFixed(1)}% + structure ${structuralScore}).</p>`);
-    parts.push(`<p><em>Action guidance:</em> ${decision.wait ? "Wait for a better fill near entry." : "Begin scaling in according to your risk plan."}</p>`);
+    const composite = clamp(Math.round((ocrConf * 0.4) + (structuralScore * 0.6)), 0, 100);
+    parts.push(`<p style="color:#cfcfcf">Composite confidence: <strong>${composite}%</strong> (OCR ${ocrConf.toFixed(1)}% + structure ${structuralScore})</p>`);
+    parts.push(`<p style="color:#cfcfcf">Action guidance: ${decision.wait ? 'Wait for a better fill near entry.' : 'Scale in according to your risk plan.'}</p>`);
   }
 
-  // Practical trade management
-  parts.push(`<h3>Trade management & discipline</h3>`);
-  parts.push(`<p>Size to risk: calculate position size so that a full stop-out equals a pre-defined percentage of your account. Use the underlying stop level, not option price, to manage risk. If the chart no longer matches the original setup, exit the trade even if the option still has time.</p>`);
-  parts.push(`<p>Emotional checklist: 1) Is this trade within your daily risk budget? 2) Can you accept the stop without panic? 3) Do you have a clear plan for partial exits and trailing?</p>`);
+  // Trade management
+  parts.push(`<div style="margin-top:10px"><strong>Trade management</strong>:</div>`);
+  parts.push(`<ol style="color:#cfcfcf">`);
+  parts.push(`<li>Size to risk: calculate position so a full stop-out equals your pre-defined risk per trade.</li>`);
+  parts.push(`<li>Use underlying stop level, not option price, to manage risk.</li>`);
+  parts.push(`<li>If the chart no longer matches the original setup, exit the trade even if the option still has time.</li>`);
+  parts.push(`</ol>`);
 
-  // Final mentor note
-  parts.push(`<h3>Mentor note</h3>`);
-  parts.push(`<p>Trading is a game of repeated, disciplined decisions. The engine gives you a read; your job is to execute the plan and manage risk. If you want, I can now build the 5-strike options ladder around the entry and recommend the contract and expiration — or you can upload an options-chain screenshot and I will refine the recommendation using real bid/ask/IV data.</p>`);
+  // Mentor closing
+  parts.push(`<div style="margin-top:12px;color:#d4af37">Mentor note</div>`);
+  parts.push(`<p style="color:#cfcfcf">This read is derived entirely from the photo you provided. If you want, I will now build the 5-strike ladder and recommend the exact contract and expiration based on this read.</p>`);
 
-  return parts.join("");
+  parts.push(`</div>`);
+  return parts.join('');
 }
 
-// -----------------------------
-// Canvas Drawing: Golden Chart + Bars + Labels
-// -----------------------------
-function drawGoldenChart(canvasId, data, decision, opts = {}) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext("2d");
-
-  const price   = safeNumber(data.price, 0);
-  const dayHigh = safeNumber(data.dayHigh, price * 1.02);
-  const dayLow  = safeNumber(data.dayLow, price * 0.98);
-
-  const entry  = safeNumber(decision.entry, price);
-  const stop   = safeNumber(decision.stop, price * 0.95);
-  const target = safeNumber(decision.target, price * 1.05);
-
-  const future = simulateFuture(data, decision, 40);
-  const allPrices = [dayLow, dayHigh, price, entry, stop, target, ...future].filter(v => v != null);
-  const minP = Math.min(...allPrices);
-  const maxP = Math.max(...allPrices);
-
-  const pad = 36;
-  const w = canvas.width;
-  const h = canvas.height;
-
-  ctx.clearRect(0, 0, w, h);
-
-  // Background
-  ctx.fillStyle = "#050505";
-  ctx.fillRect(0, 0, w, h);
-
-  // Grid lines (subtle)
-  ctx.strokeStyle = "rgba(212,175,55,0.06)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad + (i / 4) * (h - pad * 2);
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
-    ctx.stroke();
+// Render pipeline: uses renderGoldenChartFromFile if available, otherwise falls back to internal painting
+async function renderAndAnnotate(canvas, file, parsed, decision, ocrMeta) {
+  // If the auto renderer exists, use it because it already infers scale and paints
+  if (typeof renderGoldenChartFromFile === 'function') {
+    return await renderGoldenChartFromFile(canvas, file);
   }
 
-  function yFor(p) {
-    if (maxP === minP) return h / 2;
-    return h - pad - ((p - minP) / (maxP - minP)) * (h - pad * 2);
-  }
+  // Fallback: simple painting using parsed dayHigh/dayLow mapping
+  // (This fallback is unlikely because goldenChartAuto should be present)
+  const img = await loadImageFromFile(file);
+  const ctx = canvas.getContext('2d');
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  canvas.width = Math.round(cssW * (window.devicePixelRatio || 1));
+  canvas.height = Math.round(cssH * (window.devicePixelRatio || 1));
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, cssW, cssH);
+  // draw image fit
+  const fit = fitImageToCanvas(img.width, img.height, cssW, cssH);
+  ctx.globalAlpha = 0.06;
+  ctx.drawImage(img, fit.x, fit.y, fit.w, fit.h);
+  ctx.globalAlpha = 1;
+  // simple gold overlay
+  ctx.fillStyle = 'rgba(212,175,55,0.06)';
+  ctx.fillRect(0, 0, cssW, cssH);
+  // draw entry/stop/target using fallback mapping
+  const priceToY = fallbackPriceToY(parsed, cssH) || ((p) => cssH / 2);
+  drawLine(ctx, cssW, cssH, priceToY, decision.entry, '#3cff9d', 'ENTRY');
+  drawLine(ctx, cssW, cssH, priceToY, decision.stop, '#ff4b4b', 'STOP');
+  drawLine(ctx, cssW, cssH, priceToY, decision.target, '#4bb8ff', 'TARGET');
+  return { ok: true };
+}
 
-  // Price marker
-  ctx.fillStyle = "#d4af37";
+// Helper drawLine for fallback
+function drawLine(ctx, w, h, priceToY, price, color, label) {
+  if (price == null) return;
+  let y = priceToY(price);
+  y = clamp(y, 0, h);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8,6]);
   ctx.beginPath();
-  ctx.arc(pad + 10, yFor(price), 6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#d4af37";
-  ctx.font = "12px system-ui, Arial";
-  ctx.fillText(`Now ${price.toFixed(2)}`, pad + 20, yFor(price) + 4);
-
-  // Entry line (green dashed)
-  ctx.strokeStyle = "#3cff9d";
-  ctx.setLineDash([6, 6]);
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(pad, yFor(entry));
-  ctx.lineTo(w - pad, yFor(entry));
+  ctx.moveTo(0, y);
+  ctx.lineTo(w, y);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = "#3cff9d";
-  ctx.fillText(`Entry ${entry.toFixed(2)}`, pad + 4, yFor(entry) - 8);
-
-  // Stop line (red)
-  ctx.strokeStyle = "#ff4b4b";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(pad, yFor(stop));
-  ctx.lineTo(w - pad, yFor(stop));
-  ctx.stroke();
-  ctx.fillStyle = "#ff4b4b";
-  ctx.fillText(`Stop ${stop.toFixed(2)}`, pad + 4, yFor(stop) - 8);
-
-  // Target line (blue)
-  ctx.strokeStyle = "#4bb8ff";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(pad, yFor(target));
-  ctx.lineTo(w - pad, yFor(target));
-  ctx.stroke();
-  ctx.fillStyle = "#4bb8ff";
-  ctx.fillText(`Target ${target.toFixed(2)}`, pad + 4, yFor(target) - 8);
-
-  // Future path
-  ctx.strokeStyle = decision.direction === "call" ? "#3cff9d" : decision.direction === "put" ? "#ff4b4b" : "#999";
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  future.forEach((p, i) => {
-    const x = pad + (i / (future.length - 1 || 1)) * (w - pad * 2);
-    const y = yFor(p);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Small legend
-  ctx.fillStyle = "#d4af37";
-  ctx.fillText("Golden Formula", w - pad - 110, pad - 8);
+  ctx.fillStyle = color;
+  ctx.font = '12px system-ui, Arial';
+  const text = `${label} ${price.toFixed(2)}`;
+  const metrics = ctx.measureText(text);
+  const boxW = metrics.width + 16;
+  const boxH = 20;
+  const boxX = w - boxW - 12;
+  const boxY = clamp(y - boxH / 2, 6, h - boxH - 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = color;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  ctx.fillStyle = color;
+  ctx.fillText(text, boxX + 8, boxY + boxH / 2 + 4);
+  ctx.restore();
 }
 
-// -----------------------------
-// Options-chain image OCR (optional refinement)
-// -----------------------------
-async function refineWithOptionsChainImage(file) {
-  // Preprocess and OCR the options chain image, then attempt to parse numeric columns (bid/ask/iv/delta)
-  try {
-    const img = await loadImageFromFile(file);
-    const canvas = preprocessImageToCanvas(img, 1200);
-    const ocrRes = await ocrWithRetries(canvas, 1, 400);
-    // Very simple numeric extraction: find lines with % (IV) or "Bid" "Ask"
-    const text = ocrRes.text || "";
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const parsed = { rawText: text, lines, ivHints: [], bidAskRows: [] };
-
-    for (const line of lines) {
-      const ivMatch = line.match(/([0-9]{1,3}\.?[0-9]?)\s*%/);
-      if (ivMatch) parsed.ivHints.push(Number(ivMatch[1]));
-      const ba = line.match(/([0-9]+\.[0-9]+)\s+\/\s+([0-9]+\.[0-9]+)/);
-      if (ba) parsed.bidAskRows.push({ bid: Number(ba[1]), ask: Number(ba[2]), raw: line });
-    }
-
-    return parsed;
-  } catch (err) {
-    return { error: true, message: err?.message || "OCR failed" };
+// Fit image helper
+function fitImageToCanvas(imgW, imgH, canvasW, canvasH) {
+  const imgRatio = imgW / imgH;
+  const canvasRatio = canvasW / canvasH;
+  let w, h, x, y;
+  if (imgRatio > canvasRatio) {
+    w = canvasW;
+    h = Math.round(w / imgRatio);
+    x = 0;
+    y = Math.round((canvasH - h) / 2);
+  } else {
+    h = canvasH;
+    w = Math.round(h * imgRatio);
+    y = 0;
+    x = Math.round((canvasW - w) / 2);
   }
+  return { x, y, w, h };
 }
 
-// -----------------------------
-// Main OCR handler (file or drop)
-// -----------------------------
-async function handleFileUpload(file, optionsChainFile = null) {
+// Fallback priceToY builder
+function fallbackPriceToY(parsed, canvasH) {
+  const price = safeNum(parsed.price, null);
+  const high = safeNum(parsed.dayHigh, null);
+  const low = safeNum(parsed.dayLow, null);
+  if (high != null && low != null && high !== low) {
+    const topY = canvasH * 0.08;
+    const bottomY = canvasH * 0.92;
+    return (p) => topY + ((high - p) / (high - low)) * (bottomY - topY);
+  }
+  if (price != null) {
+    const centerY = canvasH / 2;
+    const pxPerUnit = Math.max(0.5, Math.abs(price) * 0.01);
+    return (p) => centerY - (p - price) * pxPerUnit;
+  }
+  return null;
+}
+
+// Main handler that ties everything together
+async function processFile(file) {
   const statusEl = document.getElementById(STATUS_ID);
   const outEl = document.getElementById(OUTPUT_ID);
   const logEl = document.getElementById(LOG_ID);
+  const canvas = document.getElementById(CANVAS_ID);
 
   try {
-    statusEl.textContent = "Loading image...";
+    statusEl.textContent = 'Loading image...';
     const img = await loadImageFromFile(file);
 
-    statusEl.textContent = "Preprocessing image for OCR...";
-    const canvas = preprocessImageToCanvas(img);
+    statusEl.textContent = 'Preprocessing image for OCR...';
+    const preCanvas = preprocessImage(img, MAX_DIM);
 
-    statusEl.textContent = "Running OCR (this may take a few seconds)...";
-    const ocrResult = await ocrWithRetries(canvas, OCR_CONFIG.retryCount, OCR_CONFIG.retryDelayMs);
+    statusEl.textContent = 'Running OCR...';
+    const ocr = await ocrCanvasWithRetries(preCanvas, OCR_RETRIES, OCR_RETRY_DELAY);
 
-    statusEl.textContent = "Parsing chart text...";
-    const parsed = parseChartText(ocrResult.text || "");
+    statusEl.textContent = 'Parsing chart text...';
+    const parsed = parseChartText(ocr.text || '');
 
-    // Build data object
-    const data = {
-      price: safeNumber(parsed.price, null),
-      dayHigh: safeNumber(parsed.dayHigh, null),
-      dayLow: safeNumber(parsed.dayLow, null),
-      maFast: safeNumber(parsed.maFast, null),
-      maSlow: safeNumber(parsed.maSlow, null),
-      ma200: safeNumber(parsed.ma200, null),
-      ticker: parsed.ticker || null,
-      ocrRaw: ocrResult.raw
-    };
+    // Normalize words and extract axis numbers
+    const normWords = normalizeWords(ocr.words || []);
+    const canvasW = preCanvas.width;
+    const axis = extractAxisNumbers(normWords, canvasW);
+    const axisNums = (axis.right.length >= axis.left.length) ? axis.right : axis.left;
 
-    statusEl.textContent = "Running rule engine...";
-    const decision = decideTrade(data, { history: [], contextMeta: { ocrAvgConf: ocrResult.avgConf } });
+    // Map axis y from preCanvas to final canvas CSS size
+    const cssCanvas = document.getElementById(CANVAS_ID);
+    const cssW = cssCanvas.clientWidth;
+    const cssH = cssCanvas.clientHeight;
+    const scaleY = cssH / preCanvas.height;
+    const axisNormalized = axisNums.map(n => ({ val: n.val, y: n.y * scaleY }));
 
-    // If user provided an options-chain image, refine recommendation
-    let optionsChainInfo = null;
-    if (optionsChainFile) {
-      statusEl.textContent = "Refining with options-chain image...";
-      optionsChainInfo = await refineWithOptionsChainImage(optionsChainFile);
+    // Build priceToY mapping
+    let priceToY = null;
+    if (axisNormalized.length >= 2) {
+      priceToY = buildPriceToY(axisNormalized);
     }
 
-    // Build long narrative
-    const narrative = buildLongNarrative(data, decision, { avgConf: ocrResult.avgConf });
+    // Run rule engine
+    statusEl.textContent = 'Running rule engine...';
+    const decision = decideTrade(parsed, { history: [], context: { ocrAvgConf: ocr.avgConf } });
 
-    // Render outputs
-    outEl.innerHTML = `
-      <section class="sim-summary">
-        <h2>Immediate Read</h2>
-        ${decision.valid ? `<p><strong>Decision:</strong> ${decision.direction.toUpperCase()}</p>` : `<p><strong>No clean setup</strong></p>`}
-        <div class="sim-narrative">${narrative}</div>
-      </section>
-    `;
+    // If no axis mapping, fallback
+    if (!priceToY) {
+      priceToY = fallbackPriceToY(parsed, cssH);
+    }
+    // Final fallback mapping
+    if (!priceToY) {
+      const anchor = safeNum(parsed.price, 100);
+      const centerY = cssH / 2;
+      const pxPerUnit = Math.max(0.5, Math.abs(anchor) * 0.01);
+      priceToY = (p) => centerY - (p - anchor) * pxPerUnit;
+    }
 
-    // Log (detailed)
-    const debug = {
-      parsed,
-      ocrAvgConf: ocrResult.avgConf,
-      decision,
-      optionsChainInfo
+    // Build detectors for narrative
+    const detectors = {
+      flag: detectBullFlag(parsed),
+      even: detectEvenProximity(parsed.price),
+      maCluster: detectMACluster(parsed),
+      slope: detectMASlope([]),
+      sr: detectSupportResistance([]),
+      double: detectDoubleTopBottom([]),
+      rounding: detectRounding([])
     };
+
+    // Build long narrative
+    const narrative = buildLongNarrative(parsed, decision, detectors, { avgConf: ocr.avgConf });
+
+    // Render gold chart and overlays using the auto renderer if available
+    statusEl.textContent = 'Rendering golden chart...';
+    let renderRes = null;
+    try {
+      // Prefer the dedicated auto renderer which infers scale and paints
+      if (typeof renderGoldenChartFromFile === 'function') {
+        renderRes = await renderGoldenChartFromFile(canvas, file);
+      } else {
+        renderRes = await renderAndAnnotate(canvas, file, parsed, decision, { avgConf: ocr.avgConf });
+      }
+    } catch (err) {
+      // fallback to internal painting
+      await renderAndAnnotate(canvas, file, parsed, decision, { avgConf: ocr.avgConf });
+    }
+
+    // Save results for options page
+    try {
+      localStorage.setItem('gf_data', JSON.stringify(parsed));
+      localStorage.setItem('gf_decision', JSON.stringify(decision));
+      localStorage.setItem('gf_last_ocr_confidence', String(ocr.avgConf || 0));
+      localStorage.setItem('gf_last_analysis_time', nowISO());
+    } catch (e) {
+      // ignore storage errors
+    }
+
+    // Output summary and long narrative
+    let summaryHtml = `<div class="sim-summary">`;
+    summaryHtml += `<p style="color:#d4af37"><strong>OCR confidence</strong>: ${(ocr.avgConf || 0).toFixed(1)}%</p>`;
+    if (decision && decision.valid) {
+      summaryHtml += `<p style="color:#cfcfcf"><strong>Decision</strong>: ${decision.direction.toUpperCase()}</p>`;
+      summaryHtml += `<p style="color:#cfcfcf">Entry: ${decision.entry} • Stop: ${decision.stop} • Target: ${decision.target}</p>`;
+    } else {
+      summaryHtml += `<p style="color:#ffb3b3"><strong>No clean setup detected</strong></p>`;
+    }
+    summaryHtml += `</div>`;
+    outEl.innerHTML = summaryHtml + `<div style="margin-top:12px">${narrative}</div>`;
+
+    // Debug log
+    const debug = { parsed, decision, ocr: { avgConf: ocr.avgConf }, axis: axis, detectors, renderRes };
     logEl.innerHTML = `<pre class="debug">${JSON.stringify(debug, null, 2)}</pre>`;
 
-    // Draw chart
-    drawGoldenChart(CANVAS_ID, data, decision);
-
-    // Save for options page
-    localStorage.setItem("gf_data", JSON.stringify(data));
-    localStorage.setItem("gf_decision", JSON.stringify(decision));
-    localStorage.setItem("gf_last_ocr_confidence", String(ocrResult.avgConf || 0));
-    localStorage.setItem("gf_last_analysis_time", nowISO());
-
-    statusEl.textContent = "Analysis complete.";
-    return { ok: true, data, decision, ocrAvgConf: ocrResult.avgConf, optionsChainInfo };
+    statusEl.textContent = 'Analysis complete';
+    return { ok: true, parsed, decision, ocr, axis, detectors, renderRes };
   } catch (err) {
-    const statusEl2 = document.getElementById(STATUS_ID);
-    if (statusEl2) statusEl2.textContent = "Error reading image.";
-    const outEl2 = document.getElementById(OUTPUT_ID);
-    if (outEl2) outEl2.innerHTML = `<p class="error">Error: ${err?.message || "Unknown error"}</p>`;
-    console.error("OCR/analysis error:", err);
+    console.error('Processing error', err);
+    document.getElementById(STATUS_ID).textContent = 'Could not process image';
+    document.getElementById(OUTPUT_ID).innerHTML = `<p style="color:#ff8a8a">Error: ${err?.message || 'Unknown error'}</p>`;
+    document.getElementById(LOG_ID).textContent = String(err?.stack || err);
     return { ok: false, error: err };
   }
 }
 
-// -----------------------------
-// Wiring: click + drag/drop + optional options-chain input
-// -----------------------------
-document.addEventListener("DOMContentLoaded", () => {
+// Wiring: click + drag/drop
+document.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById(FILE_INPUT_ID);
+  const canvas = document.getElementById(CANVAS_ID);
   const statusEl = document.getElementById(STATUS_ID);
 
   if (!fileInput) {
-    console.warn("File input not found:", FILE_INPUT_ID);
+    console.warn('File input not found');
     return;
   }
 
-  // Click upload
-  fileInput.addEventListener("change", async (e) => {
+  fileInput.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    statusEl.textContent = "File selected. Starting analysis...";
-    await handleFileUpload(file);
+    statusEl.textContent = 'File selected. Starting analysis...';
+    await processFile(file);
   });
 
-  // Drag & drop (auto-read)
-  document.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    // subtle UI hint could be added here
-  });
-
-  document.addEventListener("drop", async (e) => {
+  document.addEventListener('dragover', (e) => { e.preventDefault(); });
+  document.addEventListener('drop', async (e) => {
     e.preventDefault();
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (!file) return;
-    statusEl.textContent = "File dropped. Starting analysis...";
-    await handleFileUpload(file);
+    statusEl.textContent = 'File dropped. Starting analysis...';
+    await processFile(file);
   });
 
-  // Optional: support a second input for options-chain image refinement if present
-  const optChainInput = document.getElementById("opt-chain-input");
-  if (optChainInput) {
-    optChainInput.addEventListener("change", async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      statusEl.textContent = "Options-chain image selected. Will refine next analysis.";
-      // Save temporarily so next handleFileUpload can pick it up if desired
-      localStorage.setItem("gf_options_chain_blob", "true"); // placeholder flag
-      // You can implement a UI flow to attach this file to the next analysis run
-    });
-  }
+  if (canvas) canvas.addEventListener('click', () => fileInput.click());
+
+  statusEl.textContent = 'Ready. Drop a chart or click to upload.';
 });
