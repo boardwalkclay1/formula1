@@ -1,11 +1,14 @@
-// core.js
-
-// ---------- BASIC HELPERS ----------
+// core.js — FULL MASTER ENGINE
+// ------------------------------------------------------------
+//  BASIC HELPERS
+// ------------------------------------------------------------
 export function nearestEven(price) { return Math.round(price / 5) * 5; }
 export function nextEvenUp(price)  { return Math.ceil(price / 5) * 5; }
 export function nextEvenDown(p)    { return Math.floor(p / 5) * 5; }
 
-// ---------- PARSE WEBULL / RIOT / AVGO TEXT ----------
+// ------------------------------------------------------------
+//  TEXT PARSER (Webull / RIOT / AVGO / OCR)
+// ------------------------------------------------------------
 export function parseChartText(raw) {
   let text = raw
     .replace(/\s+/g, ' ')
@@ -38,7 +41,9 @@ export function parseChartText(raw) {
   return out;
 }
 
-// ---------- BULLISH FLAG DETECTOR ----------
+// ------------------------------------------------------------
+//  BULL FLAG DETECTOR
+// ------------------------------------------------------------
 export function detectBullFlag(data) {
   const { price, dayHigh, dayLow, maFast, maSlow, ma200 } = data;
 
@@ -72,9 +77,11 @@ export function detectBullFlag(data) {
   return { isFlag: true, notes };
 }
 
-// ---------- UNIVERSAL DETECTORS ----------
+// ------------------------------------------------------------
+//  UNIVERSAL DETECTORS
+// ------------------------------------------------------------
 
-// Even-number proximity (dynamic step for small vs big prices)
+// Even-number proximity (dynamic for small/big stocks)
 export function detectEvenProximity(price) {
   if (!price) return null;
 
@@ -99,7 +106,7 @@ export function detectEvenProximity(price) {
 // MA cluster / consolidation
 export function detectMACluster({ maFast, maSlow, ma200, price }) {
   const arr = [maFast, maSlow, ma200].filter(v => v != null && !isNaN(v));
-  if (arr.length < 2 || !price) return { clustered: false, spread: null, max: null, min: null };
+  if (arr.length < 2 || !price) return { clustered: false };
 
   const max = Math.max(...arr);
   const min = Math.min(...arr);
@@ -113,8 +120,7 @@ export function detectMACluster({ maFast, maSlow, ma200, price }) {
   };
 }
 
-// MA slope / sharp move detector
-// history: [{ price, maFast, maSlow }, ...]
+// MA slope / sharp move
 export function detectMASlope(history) {
   if (!history || history.length < 3) return null;
 
@@ -140,7 +146,6 @@ export function detectMASlope(history) {
 }
 
 // Support / resistance via hit counts
-// history: [{ price }, ...]
 export function detectSupportResistance(history, tolerance = 0.2) {
   if (!history || history.length === 0) return { supports: [], resistances: [] };
 
@@ -161,7 +166,7 @@ export function detectSupportResistance(history, tolerance = 0.2) {
   };
 }
 
-// Breakout / breakdown vs support/resistance
+// Breakout / breakdown
 export function detectBreakout(price, supports, resistances) {
   if (!price) return null;
   let breakout = null;
@@ -178,12 +183,11 @@ export function detectBreakout(price, supports, resistances) {
 }
 
 // Double top / bottom
-// history: [{ price }, ...]
 export function detectDoubleTopBottom(history, tolerance = 0.3) {
-  if (!history || history.length < 5) return { doubleTop: false, doubleBottom: false, max: null, min: null };
+  if (!history || history.length < 5) return { doubleTop: false, doubleBottom: false };
 
   const prices = history.map(c => c.price).filter(p => p != null);
-  if (prices.length < 5) return { doubleTop: false, doubleBottom: false, max: null, min: null };
+  if (prices.length < 5) return { doubleTop: false, doubleBottom: false };
 
   const max = Math.max(...prices);
   const min = Math.min(...prices);
@@ -219,13 +223,16 @@ export function detectRounding(history) {
   };
 }
 
-// ---------- RULE SYSTEM ----------
+// ------------------------------------------------------------
+//  RULE SYSTEM
+// ------------------------------------------------------------
 const rules = [];
 export function addRule(rule) { rules.push(rule); }
 
-// ---------- DECISION ENGINE ----------
+// ------------------------------------------------------------
+//  DECISION ENGINE
+// ------------------------------------------------------------
 export function decideTrade(data, context = {}) {
-  // context can include: history, supports/resistances precomputed, etc.
   const notes = [];
 
   for (const rule of rules) {
@@ -249,7 +256,9 @@ export function decideTrade(data, context = {}) {
   };
 }
 
-// ---------- FUTURE SIMULATION ----------
+// ------------------------------------------------------------
+//  FUTURE SIMULATION
+// ------------------------------------------------------------
 export function simulateFuture(data, decision) {
   const price = data.price || 0;
   const candles = [];
@@ -273,13 +282,20 @@ export function simulateFuture(data, decision) {
   return candles;
 }
 
-// ---------- OPTIONS PICKER ----------
-export function pickOptionsContract(decision, daysToExpiry) {
+// ------------------------------------------------------------
+//  ADVANCED OPTIONS PICKER
+// ------------------------------------------------------------
+export function pickOptionsContract(decision, daysToExpiry, underlying, ivHint = null) {
   if (!decision.valid) {
     return {
       directionText: "No clear trade.",
       summary: "The setup is not clean enough to choose a contract.",
-      details: []
+      recommended: null,
+      candidates: [],
+      notes: [
+        "No rule fired strongly enough to justify an options position.",
+        "Wait for a cleaner alignment of price, MAs, and pattern."
+      ]
     };
   }
 
@@ -287,30 +303,74 @@ export function pickOptionsContract(decision, daysToExpiry) {
     ? "CALL – expecting upside."
     : "PUT – expecting downside.";
 
-  let expiryText = "";
-  if (daysToExpiry <= 2) expiryText = "very short‑term scalp.";
-  else if (daysToExpiry <= 5) expiryText = "short‑term move.";
-  else if (daysToExpiry <= 10) expiryText = "about a week.";
-  else if (daysToExpiry <= 20) expiryText = "a couple of weeks.";
-  else expiryText = "a swing trade.";
+  let expiryBucket = "";
+  if (daysToExpiry <= 2) expiryBucket = "0DTE–2DTE scalp";
+  else if (daysToExpiry <= 5) expiryBucket = "short‑term momentum";
+  else if (daysToExpiry <= 10) expiryBucket = "swing for about a week";
+  else if (daysToExpiry <= 20) expiryBucket = "1–3 week swing";
+  else expiryBucket = "position trade";
 
-  const details = [
-    `Direction: ${dirText}`,
-    `Strike near entry: ${decision.entry}`,
-    `Stop loss: ${decision.stop}`,
-    `Target: ${decision.target}`,
-    `Expiration: ${expiryText}`
-  ];
+  const entry = Number(decision.entry);
+  const stop  = Number(decision.stop);
+  const target = Number(decision.target);
+
+  const riskPerShare = Math.abs(entry - stop);
+  const rewardPerShare = Math.abs(target - entry);
+  const rr = rewardPerShare > 0 ? (rewardPerShare / riskPerShare).toFixed(2) : "N/A";
+
+  const strikes = [
+    entry,
+    decision.direction === "call" ? entry + 1 : entry - 1,
+    decision.direction === "call" ? entry - 1 : entry + 1
+  ].map(s => Math.round(s * 100) / 100);
+
+  const candidates = strikes.map((strike, idx) => {
+    const moneyness =
+      decision.direction === "call"
+        ? (strike < entry ? "ITM" : (strike === entry ? "ATM" : "OTM"))
+        : (strike > entry ? "ITM" : (strike === entry ? "ATM" : "OTM"));
+
+    const styleHint =
+      idx === 0 ? "balanced risk/reward, clean alignment with entry" :
+      idx === 1 ? "cheaper, higher leverage, more aggressive" :
+                  "safer, more expensive, more forgiving";
+
+    return {
+      label: `${underlying} ${strike} ${decision.direction.toUpperCase()}`,
+      strike,
+      moneyness,
+      styleHint
+    };
+  });
+
+  let recommendedIndex = 0;
+  if (daysToExpiry <= 2) recommendedIndex = 1;
+  else if (daysToExpiry <= 10) recommendedIndex = 0;
+  else recommendedIndex = 2;
+
+  const recommended = candidates[recommendedIndex];
+
+  const notes = [];
+  notes.push(`Direction: ${dirText}`);
+  notes.push(`Plan entry: ${entry.toFixed(2)}, stop: ${stop.toFixed(2)}, target: ${target.toFixed(2)}.`);
+  notes.push(`Approx R:R on the underlying: ${rr}:1.`);
+  notes.push(`Timeframe: ${expiryBucket}.`);
+
+  if (ivHint) notes.push(`Implied volatility context: ${ivHint}.`);
 
   if (decision.wait) {
-    details.push("Price is stretched → WAIT for a better entry.");
+    notes.push("Price is stretched relative to the planned entry → WAIT for a better fill.");
   } else {
-    details.push("Price is close enough → OK to enter.");
+    notes.push("Price is close enough to the planned entry → OK to begin scaling in.");
   }
+
+  notes.push("Use the underlying stop, not the option price, to manage risk.");
 
   return {
     directionText: dirText,
-    summary: "Contract guidance based on your golden rules.",
-    details
+    summary: "Advanced contract guidance based on your golden rules and current setup.",
+    recommended,
+    candidates,
+    notes
   };
 }
