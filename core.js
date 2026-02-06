@@ -1,38 +1,69 @@
-// core.js — FULL MASTER ENGINE
+// core.js — UNIVERSAL ADVANCED ENGINE
 // ------------------------------------------------------------
 //  BASIC HELPERS
 // ------------------------------------------------------------
-export function nearestEven(price) { return Math.round(price / 5) * 5; }
-export function nextEvenUp(price)  { return Math.ceil(price / 5) * 5; }
-export function nextEvenDown(p)    { return Math.floor(p / 5) * 5; }
+export function nearestEven(price) {
+  if (!price && price !== 0) return null;
+  return Math.round(price / 5) * 5;
+}
+
+export function nextEvenUp(price) {
+  if (!price && price !== 0) return null;
+  return Math.ceil(price / 5) * 5;
+}
+
+export function nextEvenDown(price) {
+  if (!price && price !== 0) return null;
+  return Math.floor(price / 5) * 5;
+}
+
+// Dynamic step for “even” zones (pennies → tens → hundreds)
+export function dynamicStep(price) {
+  if (price <= 0.5) return 0.01;
+  if (price <= 5) return 0.05;
+  if (price <= 20) return 0.1;
+  if (price <= 100) return 0.5;
+  if (price <= 300) return 1;
+  if (price <= 1000) return 5;
+  return 10;
+}
 
 // ------------------------------------------------------------
-//  TEXT PARSER (Webull / RIOT / AVGO / OCR)
+//  UNIVERSAL TEXT PARSER (ANY TICKER, ANY BROKER, ANY OCR)
 // ------------------------------------------------------------
 export function parseChartText(raw) {
-  let text = raw
-    .replace(/\s+/g, ' ')
-    .replace(/–|—/g, '-')
-    .replace(/[^0-9a-zA-Z\.\:\-\/ ]/g, '')
-    .replace(/(\d)\s+(\d)/g, '$1$2');
+  let text = (raw || "")
+    .replace(/\s+/g, " ")
+    .replace(/–|—/g, "-")
+    .replace(/[^0-9a-zA-Z\.\:\-\/ ]/g, "")
+    .replace(/(\d)\s+(\d)/g, "$1$2")
+    .trim();
 
   const out = {};
 
-  const priceMatch =
-    text.match(/RIOT[^0-9]*([0-9]+\.[0-9]+)/i) ||
-    text.match(/AVGO[^0-9]*([0-9]+\.[0-9]+)/i) ||
-    text.match(/([0-9]+\.[0-9]+)\s*[▲▼\+\-]/);
+  // -------- PRICE DETECTION --------
+  const tickerPrice = text.match(/[A-Z]{2,6}[^0-9]*([0-9]+\.[0-9]+)/);
+  const priceSymbol = text.match(/([0-9]+\.[0-9]+)\s*[+\-▲▼]/);
+  const firstDecimal = text.match(/([0-9]+\.[0-9]+)/);
+
+  const priceMatch = tickerPrice || priceSymbol || firstDecimal;
   if (priceMatch) out.price = parseFloat(priceMatch[1]);
 
-  const hlMatch = text.match(/H\/L[^0-9]*([0-9]+\.[0-9]+)-([0-9]+\.[0-9]+)/i);
+  // -------- HIGH / LOW DETECTION --------
+  const hlMatch =
+    text.match(/H\/L[^0-9]*([0-9]+\.[0-9]+)[^0-9]+([0-9]+\.[0-9]+)/i) ||
+    text.match(/High[^0-9]*([0-9]+\.[0-9]+)[^0-9]+Low[^0-9]*([0-9]+\.[0-9]+)/i) ||
+    text.match(/([0-9]+\.[0-9]+)\s*-\s*([0-9]+\.[0-9]+)/);
+
   if (hlMatch) {
     out.dayHigh = parseFloat(hlMatch[1]);
     out.dayLow  = parseFloat(hlMatch[2]);
   }
 
-  const ma20  = text.match(/MA20[: ]*([0-9]+\.[0-9]+)/i);
-  const ma50  = text.match(/MA50[: ]*([0-9]+\.[0-9]+)/i);
-  const ma200 = text.match(/MA200[: ]*([0-9]+\.[0-9]+)/i);
+  // -------- MOVING AVERAGES (ANY FORMAT) --------
+  const ma20  = text.match(/MA ?20[: ]*([0-9]+\.[0-9]+)/i);
+  const ma50  = text.match(/MA ?50[: ]*([0-9]+\.[0-9]+)/i);
+  const ma200 = text.match(/MA ?200[: ]*([0-9]+\.[0-9]+)/i);
 
   if (ma20)  out.maFast = parseFloat(ma20[1]);
   if (ma50)  out.maSlow = parseFloat(ma50[1]);
@@ -42,10 +73,12 @@ export function parseChartText(raw) {
 }
 
 // ------------------------------------------------------------
-//  BULL FLAG DETECTOR
+//  PATTERN / STRUCTURE DETECTORS
 // ------------------------------------------------------------
+
+// Bullish flag detector (price vs day range + MAs)
 export function detectBullFlag(data) {
-  const { price, dayHigh, dayLow, maFast, maSlow, ma200 } = data;
+  const { price, dayHigh, dayLow, maFast, maSlow, ma200 } = data || {};
 
   if ([price, dayHigh, dayLow, maFast, maSlow].some(v => v == null || isNaN(v))) {
     return { isFlag: false, notes: [] };
@@ -77,26 +110,18 @@ export function detectBullFlag(data) {
   return { isFlag: true, notes };
 }
 
-// ------------------------------------------------------------
-//  UNIVERSAL DETECTORS
-// ------------------------------------------------------------
-
-// Even-number proximity (dynamic for small/big stocks)
+// Even-number / key-level proximity
 export function detectEvenProximity(price) {
-  if (!price) return null;
+  if (!price && price !== 0) return null;
 
-  let step = 0.05;
-  if (price > 20) step = 0.5;
-  if (price > 100) step = 1;
-  if (price > 300) step = 5;
-  if (price > 1000) step = 10;
-
+  const step = dynamicStep(price);
   const nearest = Math.round(price / step) * step;
   const diff = price - nearest;
 
   return {
     nearest,
     diff,
+    step,
     isNear: Math.abs(diff) <= step * 0.2,
     isJustAbove: diff > 0 && Math.abs(diff) <= step * 0.2,
     isJustBelow: diff < 0 && Math.abs(diff) <= step * 0.2
@@ -104,9 +129,9 @@ export function detectEvenProximity(price) {
 }
 
 // MA cluster / consolidation
-export function detectMACluster({ maFast, maSlow, ma200, price }) {
+export function detectMACluster({ maFast, maSlow, ma200, price } = {}) {
   const arr = [maFast, maSlow, ma200].filter(v => v != null && !isNaN(v));
-  if (arr.length < 2 || !price) return { clustered: false };
+  if (arr.length < 2 || !price) return { clustered: false, spread: null, max: null, min: null };
 
   const max = Math.max(...arr);
   const min = Math.min(...arr);
@@ -120,7 +145,7 @@ export function detectMACluster({ maFast, maSlow, ma200, price }) {
   };
 }
 
-// MA slope / sharp move
+// MA slope / sharp move (history: [{ price, maFast, maSlow }, ...])
 export function detectMASlope(history) {
   if (!history || history.length < 3) return null;
 
@@ -145,30 +170,38 @@ export function detectMASlope(history) {
   };
 }
 
-// Support / resistance via hit counts
-export function detectSupportResistance(history, tolerance = 0.2) {
+// Support / resistance via hit counts (history: [{ price }, ...])
+export function detectSupportResistance(history, toleranceFactor = 0.2) {
   if (!history || history.length === 0) return { supports: [], resistances: [] };
+
+  const prices = history.map(c => c.price).filter(p => p != null);
+  if (prices.length === 0) return { supports: [], resistances: [] };
+
+  const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const tolerance = avgPrice * (toleranceFactor / 100) || 0.2;
 
   const levels = {};
 
-  history.forEach(c => {
-    const p = c.price;
-    if (!p && p !== 0) return;
+  prices.forEach(p => {
     const key = Math.round(p / tolerance) * tolerance;
     if (!levels[key]) levels[key] = { level: key, hits: 0 };
     levels[key].hits++;
   });
 
   const arr = Object.values(levels);
+  const strong = arr.filter(l => l.hits >= 3);
+
+  // For now, treat all strong levels as both potential support/resistance;
+  // rules can interpret directionally based on price.
   return {
-    supports: arr.filter(l => l.hits >= 3),
-    resistances: arr.filter(l => l.hits >= 3)
+    supports: strong,
+    resistances: strong
   };
 }
 
-// Breakout / breakdown
-export function detectBreakout(price, supports, resistances) {
-  if (!price) return null;
+// Breakout / breakdown vs support/resistance
+export function detectBreakout(price, supports = [], resistances = []) {
+  if (!price && price !== 0) return null;
   let breakout = null;
 
   resistances.forEach(r => {
@@ -182,15 +215,21 @@ export function detectBreakout(price, supports, resistances) {
   return breakout;
 }
 
-// Double top / bottom
-export function detectDoubleTopBottom(history, tolerance = 0.3) {
-  if (!history || history.length < 5) return { doubleTop: false, doubleBottom: false };
+// Double top / bottom (history: [{ price }, ...])
+export function detectDoubleTopBottom(history, toleranceFactor = 0.3) {
+  if (!history || history.length < 5) {
+    return { doubleTop: false, doubleBottom: false, max: null, min: null };
+  }
 
   const prices = history.map(c => c.price).filter(p => p != null);
-  if (prices.length < 5) return { doubleTop: false, doubleBottom: false };
+  if (prices.length < 5) {
+    return { doubleTop: false, doubleBottom: false, max: null, min: null };
+  }
 
   const max = Math.max(...prices);
   const min = Math.min(...prices);
+  const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const tolerance = avgPrice * (toleranceFactor / 100) || 0.3;
 
   const topHits = prices.filter(h => Math.abs(h - max) <= tolerance).length;
   const bottomHits = prices.filter(h => Math.abs(h - min) <= tolerance).length;
@@ -203,7 +242,7 @@ export function detectDoubleTopBottom(history, tolerance = 0.3) {
   };
 }
 
-// Rounding top / bottom
+// Rounding top / bottom (history: [{ price }, ...])
 export function detectRounding(history) {
   if (!history || history.length < 10) {
     return { roundingBottom: false, roundingTop: false };
@@ -224,10 +263,18 @@ export function detectRounding(history) {
 }
 
 // ------------------------------------------------------------
-//  RULE SYSTEM
+//  RULE SYSTEM (PLUG-IN ARCHITECTURE)
 // ------------------------------------------------------------
 const rules = [];
-export function addRule(rule) { rules.push(rule); }
+
+// rule: { name, check(data, notes, context) -> decision | null }
+export function addRule(rule) {
+  rules.push(rule);
+}
+
+export function listRules() {
+  return rules.map(r => r.name);
+}
 
 // ------------------------------------------------------------
 //  DECISION ENGINE
@@ -257,14 +304,13 @@ export function decideTrade(data, context = {}) {
 }
 
 // ------------------------------------------------------------
-//  FUTURE SIMULATION
+//  FUTURE SIMULATION (SIMPLE BIASED WALK)
 // ------------------------------------------------------------
-export function simulateFuture(data, decision) {
-  const price = data.price || 0;
+export function simulateFuture(data, decision, steps = 30) {
+  const price = data?.price || 0;
   const candles = [];
-  const steps = 30;
 
-  if (!decision.valid) {
+  if (!decision?.valid) {
     for (let i = 0; i < steps; i++) {
       candles.push(price + (Math.random() - 0.5) * (price * 0.002));
     }
@@ -285,8 +331,12 @@ export function simulateFuture(data, decision) {
 // ------------------------------------------------------------
 //  ADVANCED OPTIONS PICKER
 // ------------------------------------------------------------
-export function pickOptionsContract(decision, daysToExpiry, underlying, ivHint = null) {
-  if (!decision.valid) {
+// decision: { direction, entry, stop, target, wait, valid }
+// daysToExpiry: number
+// underlying: string (ticker)
+// ivHint: optional string like "IV elevated", "IV low", etc.
+export function pickOptionsContract(decision, daysToExpiry, underlying = "TICKER", ivHint = null) {
+  if (!decision?.valid) {
     return {
       directionText: "No clear trade.",
       summary: "The setup is not clean enough to choose a contract.",
@@ -294,7 +344,7 @@ export function pickOptionsContract(decision, daysToExpiry, underlying, ivHint =
       candidates: [],
       notes: [
         "No rule fired strongly enough to justify an options position.",
-        "Wait for a cleaner alignment of price, MAs, and pattern."
+        "Wait for a cleaner alignment of price, moving averages, and pattern."
       ]
     };
   }
@@ -310,18 +360,21 @@ export function pickOptionsContract(decision, daysToExpiry, underlying, ivHint =
   else if (daysToExpiry <= 20) expiryBucket = "1–3 week swing";
   else expiryBucket = "position trade";
 
-  const entry = Number(decision.entry);
-  const stop  = Number(decision.stop);
+  const entry  = Number(decision.entry);
+  const stop   = Number(decision.stop);
   const target = Number(decision.target);
 
-  const riskPerShare = Math.abs(entry - stop);
-  const rewardPerShare = Math.abs(target - entry);
-  const rr = rewardPerShare > 0 ? (rewardPerShare / riskPerShare).toFixed(2) : "N/A";
+  const riskPerShare    = Math.abs(entry - stop);
+  const rewardPerShare  = Math.abs(target - entry);
+  const rr = rewardPerShare > 0 && riskPerShare > 0
+    ? (rewardPerShare / riskPerShare).toFixed(2)
+    : "N/A";
 
+  // Build a small ladder of strikes around entry
   const strikes = [
     entry,
-    decision.direction === "call" ? entry + 1 : entry - 1,
-    decision.direction === "call" ? entry - 1 : entry + 1
+    decision.direction === "call" ? entry + dynamicStep(entry) : entry - dynamicStep(entry),
+    decision.direction === "call" ? entry - dynamicStep(entry) : entry + dynamicStep(entry)
   ].map(s => Math.round(s * 100) / 100);
 
   const candidates = strikes.map((strike, idx) => {
@@ -343,32 +396,34 @@ export function pickOptionsContract(decision, daysToExpiry, underlying, ivHint =
     };
   });
 
+  // Recommendation logic based on time
   let recommendedIndex = 0;
-  if (daysToExpiry <= 2) recommendedIndex = 1;
-  else if (daysToExpiry <= 10) recommendedIndex = 0;
-  else recommendedIndex = 2;
+  if (daysToExpiry <= 2)      recommendedIndex = 1; // more aggressive
+  else if (daysToExpiry <= 10) recommendedIndex = 0; // ATM / plan-aligned
+  else                         recommendedIndex = 2; // ITM / safer
 
   const recommended = candidates[recommendedIndex];
 
   const notes = [];
   notes.push(`Direction: ${dirText}`);
   notes.push(`Plan entry: ${entry.toFixed(2)}, stop: ${stop.toFixed(2)}, target: ${target.toFixed(2)}.`);
-  notes.push(`Approx R:R on the underlying: ${rr}:1.`);
+  notes.push(`Approx reward:risk on the underlying: ${rr}:1.`);
   notes.push(`Timeframe: ${expiryBucket}.`);
 
   if (ivHint) notes.push(`Implied volatility context: ${ivHint}.`);
 
   if (decision.wait) {
-    notes.push("Price is stretched relative to the planned entry → WAIT for a better fill.");
+    notes.push("Price is stretched relative to the planned entry → WAIT for a better fill near the entry zone.");
   } else {
-    notes.push("Price is close enough to the planned entry → OK to begin scaling in.");
+    notes.push("Price is close enough to the planned entry → OK to begin scaling in according to your risk plan.");
   }
 
-  notes.push("Use the underlying stop, not the option price, to manage risk.");
+  notes.push("Use the underlying stop level, not the option price, to manage risk.");
+  notes.push("Size your position so a full stop-out is emotionally and financially acceptable.");
 
   return {
     directionText: dirText,
-    summary: "Advanced contract guidance based on your golden rules and current setup.",
+    summary: "Advanced contract guidance based on your rules and current setup.",
     recommended,
     candidates,
     notes
