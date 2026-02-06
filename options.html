@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Golden Formula – Options Picker</title>
+  <title>Golden Formula – Options Chain</title>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="modules/options.js"></script>
 </head>
@@ -21,29 +21,35 @@
 
   <main class="gf-options">
     <section class="gf-hero">
-      <h2>Options Picker</h2>
+      <h2>Options Chain & Contract Selection</h2>
       <p>
-        This page takes the trade setup you found in the simulator and turns it into a clean,
-        simple options plan. You’ll see a ladder of possible contracts, and the one I personally
-        recommend will be highlighted for you.
+        This page takes the setup you found in the simulator and builds a full options chain around it.
+        Every strike is analyzed using my personal logic — timeframe, moneyness, risk, and the strength
+        of the setup. The contract I would personally choose is highlighted for you.
       </p>
       <p>
-        This is the same logic I use when I trade: clear direction, clean entry, tight stop,
-        and a contract that matches the timeframe and risk profile. No guessing.
+        This is meant to feel like I’m sitting right next to you, showing you exactly which contract
+        makes the most sense and why.
       </p>
     </section>
 
     <section class="gf-tool">
       <h2>Choose Expiration</h2>
+
       <label>Days Until Expiration</label>
       <input id="expiry" type="number" min="0" max="60" value="5">
 
       <label>Ticker Symbol</label>
       <input id="ticker" type="text" placeholder="AAPL, TSLA, RIOT, etc.">
 
-      <button id="runOptions">Generate Options Plan</button>
+      <button id="runOptions">Build Options Chain</button>
 
-      <div id="opt-output" class="result"></div>
+      <div id="opt-recommended" class="result"></div>
+
+      <h3>Full Options Chain</h3>
+      <div id="opt-chain" class="opt-grid"></div>
+
+      <h3>Clayvonte’s Notes</h3>
       <div id="opt-notes" class="notes"></div>
 
       <div class="gf-links">
