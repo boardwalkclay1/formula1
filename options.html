@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Golden Formula – Options Picker</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="modules/options.js"></script>
+</head>
+
+<body>
+  <header class="gf-header">
+    <h1>Golden Formula</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="golden-rules.html">Golden Rules</a>
+      <a href="golden-discipline.html">Golden Discipline</a>
+      <a href="glossary.html">Glossary</a>
+      <a href="https://github.com/Trade-Alive" target="_blank">Trade Alive</a>
+    </nav>
+  </header>
+
+  <main class="gf-options">
+    <section class="gf-hero">
+      <h2>Options Picker</h2>
+      <p>
+        This page takes the trade setup you found in the simulator and turns it into a clean,
+        simple options plan. You’ll see a ladder of possible contracts, and the one I personally
+        recommend will be highlighted for you.
+      </p>
+      <p>
+        This is the same logic I use when I trade: clear direction, clean entry, tight stop,
+        and a contract that matches the timeframe and risk profile. No guessing.
+      </p>
+    </section>
+
+    <section class="gf-tool">
+      <h2>Choose Expiration</h2>
+      <label>Days Until Expiration</label>
+      <input id="expiry" type="number" min="0" max="60" value="5">
+
+      <label>Ticker Symbol</label>
+      <input id="ticker" type="text" placeholder="AAPL, TSLA, RIOT, etc.">
+
+      <button id="runOptions">Generate Options Plan</button>
+
+      <div id="opt-output" class="result"></div>
+      <div id="opt-notes" class="notes"></div>
+
+      <div class="gf-links">
+        <button onclick="window.location.href='simulator.html'">← Back to Simulator</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
