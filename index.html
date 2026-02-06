@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Golden Formula – Home</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
   <script type="module" src="modules/ui-home.js"></script>
 </head>
 <body>
@@ -12,6 +11,8 @@
     <h1>Golden Formula</h1>
     <nav>
       <a href="index.html">Home</a>
+      <a href="simulator.html">Golden Simulator</a>
+      <a href="options.html">Options Picker</a>
       <a href="golden-rules.html">Golden Rules</a>
       <a href="golden-discipline.html">Golden Discipline</a>
       <a href="glossary.html">Glossary</a>
@@ -20,18 +21,19 @@
   </header>
 
   <main>
-    <!-- HERO / EXPLANATION -->
+    <!-- HERO / WHAT THIS APP IS -->
     <section class="gf-hero">
       <h2>Simple, Obvious Setups Only</h2>
       <p>
-        Golden Formula is built to think like I do when I trade: clear moving average crosses,
-        obvious highs and lows, clean even numbers, and simple reversal patterns. No complicated
-        stock language—just “up or down”, “where to enter”, and “where to cut it”.
+        Golden Formula is my trading brain turned into a tool. It looks for clean moving average
+        behavior, obvious highs and lows, reactions at even numbers, and simple reversal patterns.
+        No complicated jargon—just “up or down”, “where to enter”, “where to cut it”, and “which
+        options contract makes sense”.
       </p>
       <p>
-        When you use this app, you’re not getting a random signal generator—you’re getting my
-        personal logic, encoded into rules, so it feels like I’m sitting right next to you,
-        walking you through the chart.
+        When you use this app, you’re not getting random signals. You’re getting my personal logic,
+        encoded into rules, so it feels like I’m sitting right next to you, walking you through the
+        chart and the options chain.
       </p>
     </section>
 
@@ -39,10 +41,9 @@
     <section class="gf-trade-alive">
       <h2>Trade Alive – My Trading Academy</h2>
       <p>
-        Trade Alive is my trading academy and education hub. If you want to understand how the
-        market actually works—beyond hype, beyond guessing—that’s where I break everything down.
-        I’ve spent over 10 years learning, testing, and refining these ideas so you don’t have to
-        do it alone.
+        Trade Alive is my academy and education hub. If you want to understand how the market
+        actually works—beyond hype and guessing—that’s where I break everything down. I’ve spent
+        over 10 years learning, testing, and refining these ideas so you don’t have to do it alone.
       </p>
       <p>
         The same logic that powers this app is what I used to turn a small account into
@@ -55,10 +56,10 @@
         <a href="https://github.com/Trade-Alive" target="_blank">Trade Alive on GitHub</a>.
       </p>
       <p>
-        This app is meant to help you overcome one of the hardest parts of trading: doing it
-        alone. With Golden Formula, you can upload a chart and instantly see how I would read it,
-        what I would look for, and how I would think about the trade. It won’t replace learning,
-        but it will make the learning feel like you’re not in the dark anymore.
+        This app is built to help you overcome one of the hardest parts of trading: doing it alone.
+        With Golden Formula, you can upload a chart in the simulator and instantly see how I would
+        read it, what I would look for, and how I would think about the trade. It won’t replace
+        learning, but it will make the learning feel guided instead of lonely.
       </p>
       <p>
         If you ever feel lost or have questions, you can email me directly:
@@ -66,110 +67,49 @@
       </p>
     </section>
 
-    <!-- HOW TO USE / PHOTO UPLOAD -->
-    <section class="gf-tool">
-      <h2>How to Use the Golden Formula Simulator</h2>
+    <!-- HOW THE APP FLOWS -->
+    <section class="gf-flow">
+      <h2>How the Golden Formula App Works</h2>
       <p>
-        The simulator is designed so you don’t have to guess what to type. You can simply upload
-        a screenshot of your chart, and the app will read the numbers for you using OCR
-        (image-to-text). From there, it runs everything through my personal rule engine and gives
-        you guidance as if I’m right there with you.
-      </p>
-      <p>
-        Here’s the flow:
+        The app is split into a few focused pieces that all work together:
       </p>
       <ul>
-        <li><strong>1. Upload a chart screenshot:</strong> Take a clear screenshot of your stock chart (with price, highs/lows, and moving averages visible) and upload it below.</li>
-        <li><strong>2. Auto-read the numbers:</strong> The app uses Tesseract to read the text from the image and fill in the price, day high/low, and moving averages.</li>
-        <li><strong>3. My logic runs on your chart:</strong> Once the numbers are in, the Golden Formula engine checks for flags, double tops/bottoms, rounding patterns, even-number reactions, and moving average behavior—exactly how I would.</li>
-        <li><strong>4. You get a clear, human-style explanation:</strong> The output tells you the direction, entry, stop, target, and why the setup matters, in plain language.</li>
+        <li>
+          <strong>Golden Simulator:</strong> You upload a chart screenshot or paste numbers, and the
+          engine reads price, highs/lows, and moving averages. It then runs my rules to decide if
+          there’s a clean setup, what direction I’d lean, and where I’d place entry, stop, and target.
+        </li>
+        <li>
+          <strong>Options Picker:</strong> Once a setup is found, the options page builds an options
+          chain around your entry, highlights the contract I’d choose, and explains why—timeframe,
+          moneyness, risk, and how it fits the setup.
+        </li>
+        <li>
+          <strong>Golden Rules:</strong> A page that lays out the core rules I trade by, so you can
+          see the logic behind the engine.
+        </li>
+        <li>
+          <strong>Golden Discipline:</strong> A page focused on discipline, emotional control, and
+          the mental side of trading—because the best logic in the world doesn’t matter if you can’t
+          control your impulses.
+        </li>
+        <li>
+          <strong>Glossary:</strong> A full glossary so any word you don’t understand, you can look
+          up instantly while you’re using the app.
+        </li>
       </ul>
       <p>
-        This is built to help you overcome the isolation of trading alone. Instead of staring at
-        a chart wondering what to do, you can let the simulator walk you through the logic I use
-        every day. It won’t make you skip the work—but it will make the work feel guided.
+        You’ve already taken a big step just by being here. If you stay disciplined, keep learning,
+        and use tools like this with respect for risk, trading can genuinely change your life.
       </p>
-      <p>
-        I still strongly recommend learning the “why” behind every decision. That’s why this app
-        is paired with:
-      </p>
-      <ul>
-        <li><strong>Glossary:</strong> A full glossary page so any word you don’t understand, you can look up instantly.</li>
-        <li><strong>Golden Rules:</strong> A page that lays out the core rules I trade by.</li>
-        <li><strong>Golden Discipline:</strong> A page focused on discipline, emotional control, and the mental side of trading.</li>
-      </ul>
-      <p>
-        You’ve already taken a huge step just by being here and using this app. If you stay
-        disciplined, keep learning, and use tools like this with respect for risk, trading can
-        genuinely change your life.
-      </p>
+    </section>
 
-      <h2>1. Screenshot (auto‑read)</h2>
-      <label>Upload chart or options screenshot</label>
-      <input type="file" id="imageInput" accept="image/*">
-      <p class="note" id="ocrStatus">No image loaded yet.</p>
-
-      <h2>2. Paste or type numbers</h2>
-      <label>Paste data (optional)</label>
-      <textarea id="pasteBox" placeholder="Paste your chart text or let the screenshot fill this."></textarea>
-
-      <label>Current Price</label>
-      <input id="price" type="number" step="0.01">
-
-      <label>Day High</label>
-      <input id="dayHigh" type="number" step="0.01">
-
-      <label>Day Low</label>
-      <input id="dayLow" type="number" step="0.01">
-
-      <label>Fast Moving Average (20)</label>
-      <input id="maFast" type="number" step="0.01">
-
-      <label>Slow Moving Average (50)</label>
-      <input id="maSlow" type="number" step="0.01">
-
-      <label>Long Moving Average (200)</label>
-      <input id="ma200" type="number" step="0.01">
-
-      <label>Timeframe</label>
-      <select id="timeframe">
-        <option value="5m">5 minutes</option>
-        <option value="15m">15 minutes</option>
-        <option value="1h">1 hour</option>
-        <option value="4h">4 hours</option>
-        <option value="daily">Daily</option>
-      </select>
-
-      <h2>3. Pattern and reversal</h2>
-      <label>Pattern</label>
-      <select id="pattern">
-        <option value="none">Nothing clear</option>
-        <option value="doubleBottom">Double Bottom</option>
-        <option value="roundingBottom">Rounding Bottom</option>
-        <option value="doubleTop">Double Top</option>
-        <option value="roundingTop">Rounding Top</option>
-      </select>
-
-      <label>Strong reversal candle at turning point?</label>
-      <select id="reversal">
-        <option value="no">No</option>
-        <option value="yes">Yes</option>
-      </select>
-
-      <label>Reaction at clean even number? (100, 105, 110, etc.)</label>
-      <select id="evenReaction">
-        <option value="no">No</option>
-        <option value="yes">Yes</option>
-      </select>
-
-      <button id="findSetupBtn">Find Setup</button>
-      <div id="output" class="result"></div>
-
-      <div class="gf-links">
-        <button onclick="window.location.href='options.html'">Go to Options Picker →</button>
-        <button onclick="window.location.href='simulator.html'">Go to Simulator →</button>
-        <button onclick="window.location.href='golden-discipline.html'">Read Golden Discipline →</button>
-      </div>
+    <!-- CALL TO ACTION -->
+    <section class="gf-links">
+      <button onclick="window.location.href='simulator.html'">Go to Golden Simulator →</button>
+      <button onclick="window.location.href='options.html'">Go to Options Picker →</button>
+      <button onclick="window.location.href='golden-discipline.html'">Read Golden Discipline →</button>
+      <button onclick="window.location.href='https://github.com/Trade-Alive'">Visit Trade Alive →</button>
     </section>
   </main>
 </body>
