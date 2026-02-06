@@ -1,16 +1,7 @@
-// simulator.js — FULLY FIXED, ALWAYS-FIRES VERSION
-import { 
-  parseChartText, 
-  decideTrade, 
-  simulateFuture 
-} from './core.js';
-
-// 🔥 MOST IMPORTANT: LOAD THE RULES
+// simulator.js — upgraded
+import { parseChartText, decideTrade, simulateFuture } from './core.js';
 import './rules.js';
 
-// ------------------------------------------------------------
-//  DRAW FUTURE SIMULATION
-// ------------------------------------------------------------
 function drawSimulation(canvasId, data, decision) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !canvas.getContext) return;
@@ -41,16 +32,16 @@ function drawSimulation(canvasId, data, decision) {
   // NOW marker
   ctx.fillStyle = "#d4af37";
   ctx.beginPath();
-  ctx.arc(w * 0.25, yFor(price), 5, 0, Math.PI * 2);
+  ctx.arc(w * 0.15, yFor(price), 5, 0, Math.PI * 2);
   ctx.fill();
 
-  // Future path
+  // future path
   ctx.strokeStyle = decision.direction === "call" ? "#3cff9d" :
                     decision.direction === "put"  ? "#ff4b4b" : "#999";
   ctx.lineWidth = 3;
   ctx.beginPath();
   future.forEach((p, i) => {
-    const x = w * 0.25 + (i / (future.length - 1 || 1)) * (w * 0.6);
+    const x = w * 0.15 + (i / (future.length - 1 || 1)) * (w * 0.7);
     const y = yFor(p);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
@@ -58,9 +49,6 @@ function drawSimulation(canvasId, data, decision) {
   ctx.stroke();
 }
 
-// ------------------------------------------------------------
-//  HANDLE TEXT → PARSE → DECISION → OUTPUT
-// ------------------------------------------------------------
 function handleText(text) {
   const parsed = parseChartText(text);
 
@@ -73,15 +61,11 @@ function handleText(text) {
     ma200:   parsed.ma200
   };
 
-  // 🔥 ALWAYS PASS CONTEXT (even if empty for now)
   const decision = decideTrade(data, { history: [] });
 
   const out = document.getElementById("sim-output");
   const logEl = document.getElementById("sim-log");
 
-  // ------------------------------------------------------------
-  //  ADVANCED OUTPUT
-  // ------------------------------------------------------------
   if (!decision.valid) {
     out.innerHTML = `
       <h2>No Clean Setup Yet</h2>
@@ -104,47 +88,28 @@ function handleText(text) {
     `;
   }
 
-  // ------------------------------------------------------------
-  //  ADVANCED NOTES (Clayvonte-style logic)
-  // ------------------------------------------------------------
-  logEl.innerHTML = decision.notes
-    .map(n => `<p>${n}</p>`)
-    .join("");
+  logEl.innerHTML = decision.notes.map(n => `<p>${n}</p>`).join("");
 
-  // ------------------------------------------------------------
-  //  DRAW SIMULATION
-  // ------------------------------------------------------------
   drawSimulation("sim-canvas", data, decision);
 
-  // ------------------------------------------------------------
-  //  SAVE FOR OPTIONS PICKER
-  // ------------------------------------------------------------
+  // 🔥 Save EVERYTHING for options page
   localStorage.setItem("gf_decision", JSON.stringify(decision));
+  localStorage.setItem("gf_data", JSON.stringify(data));
 }
 
-// ------------------------------------------------------------
-//  OCR HANDLER
-// ------------------------------------------------------------
 function runOCR(file) {
   const status = document.getElementById("sim-status");
   status.textContent = "Reading chart...";
-
-  Tesseract.recognize(file, 'eng')
-    .then(({ data }) => {
-      status.textContent = "Chart read. Running logic...";
-      handleText(data.text || "");
-    })
-    .catch(() => {
-      status.textContent = "Could not read image.";
-    });
+  Tesseract.recognize(file, 'eng').then(({ data }) => {
+    status.textContent = "Chart read. Running logic...";
+    handleText(data.text || "");
+  }).catch(() => {
+    status.textContent = "Could not read image.";
+  });
 }
 
-// ------------------------------------------------------------
-//  INIT
-// ------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   const fileInput = document.getElementById("file-input");
-
   fileInput.addEventListener("change", e => {
     const file = e.target.files[0];
     if (file) runOCR(file);
