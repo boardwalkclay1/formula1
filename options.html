@@ -2,11 +2,10 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Golden Formula – Options Chain</title>
+  <title>Golden Formula – Options & Golden Chart</title>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="modules/options.js"></script>
 </head>
-
 <body>
   <header class="gf-header">
     <h1>Golden Formula</h1>
@@ -21,28 +20,26 @@
 
   <main class="gf-options">
     <section class="gf-hero">
-      <h2>Options Chain & Contract Selection</h2>
+      <h2>Options Chain & Golden Chart</h2>
       <p>
-        This page takes the setup you found in the simulator and builds a full options chain around it.
-        Every strike is analyzed using my personal logic — timeframe, moneyness, risk, and the strength
-        of the setup. The contract I would personally choose is highlighted for you.
-      </p>
-      <p>
-        This is meant to feel like I’m sitting right next to you, showing you exactly which contract
-        makes the most sense and why.
+        This page takes the setup from the simulator and turns it into a full options chain and a
+        Golden Chart with entry, stop, and target marked. It’s meant to feel like I’m sitting
+        right next to you, showing you exactly what I’d do and why.
       </p>
     </section>
 
     <section class="gf-tool">
-      <h2>Choose Expiration</h2>
-
+      <h2>Setup</h2>
       <label>Days Until Expiration</label>
       <input id="expiry" type="number" min="0" max="60" value="5">
 
       <label>Ticker Symbol</label>
       <input id="ticker" type="text" placeholder="AAPL, TSLA, RIOT, etc.">
 
-      <button id="runOptions">Build Options Chain</button>
+      <button id="runOptions">Build Options Plan</button>
+
+      <h2>Golden Chart</h2>
+      <canvas id="opt-canvas" width="800" height="300"></canvas>
 
       <div id="opt-recommended" class="result"></div>
 
