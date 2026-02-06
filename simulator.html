@@ -1,41 +1,50 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>Golden Simulator</title>
+  <title>Golden Formula – Simulator</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+  <script type="module" src="modules/simulator.js"></script>
 </head>
+<body>
+  <header class="gf-header">
+    <h1>Golden Formula</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="golden-rules.html">Golden Rules</a>
+      <a href="golden-discipline.html">Golden Discipline</a>
+      <a href="glossary.html">Glossary</a>
+      <a href="https://github.com/Trade-Alive" target="_blank">Trade Alive</a>
+    </nav>
+  </header>
 
-<body class="gold-theme">
-  <main class="layout">
+  <main class="gf-options">
+    <section class="gf-hero">
+      <h2>Golden Simulator</h2>
+      <p>
+        Upload a chart screenshot and let the engine read it. I’ll tell you if there’s a clean setup,
+        which direction I’d lean, and where I’d place entry, stop, and target.
+      </p>
+    </section>
 
-    <section class="left">
-      <h1>Golden Simulator</h1>
+    <section class="gf-tool">
+      <h2>1. Screenshot (auto‑read)</h2>
+      <input type="file" id="file-input" accept="image/*">
+      <p id="sim-status" class="note">No image loaded yet.</p>
 
-      <!-- THIS IS THE UPLOAD BUTTON YOU NEED -->
-      <label class="upload-btn">
-        <input type="file" id="file-input" accept="image/*" style="display:none;">
-        <span>Select Webull Screenshot</span>
-      </label>
+      <h2>Golden Chart</h2>
+      <canvas id="sim-canvas" width="800" height="300"></canvas>
 
-      <p id="sim-status"></p>
-
-      <div id="sim-output"></div>
+      <div id="sim-output" class="result"></div>
 
       <h3>Logic Log</h3>
-      <pre id="sim-log"></pre>
+      <div id="sim-log" class="notes"></div>
 
-      <p><a href="options.html">Go to Options →</a></p>
+      <div class="gf-links">
+        <button onclick="window.location.href='options.html'">Go to Options →</button>
+      </div>
     </section>
-
-    <section class="right">
-      <canvas id="sim-canvas" width="900" height="400"></canvas>
-    </section>
-
   </main>
-
-  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="core.js"></script>
-  <script type="module" src="simulator.js"></script>
 </body>
 </html>
