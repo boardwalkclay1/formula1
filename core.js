@@ -41,6 +41,10 @@ export function parseChartText(raw) {
 
   const out = {};
 
+  // -------- TICKER DETECTION (best-effort) --------
+  const tickerMatch = text.match(/\b([A-Z]{2,6})\b/);
+  if (tickerMatch) out.ticker = tickerMatch[1];
+
   // -------- PRICE DETECTION --------
   const tickerPrice = text.match(/[A-Z]{2,6}[^0-9]*([0-9]+\.[0-9]+)/);
   const priceSymbol = text.match(/([0-9]+\.[0-9]+)\s*[+\-▲▼]/);
@@ -191,8 +195,6 @@ export function detectSupportResistance(history, toleranceFactor = 0.2) {
   const arr = Object.values(levels);
   const strong = arr.filter(l => l.hits >= 3);
 
-  // For now, treat all strong levels as both potential support/resistance;
-  // rules can interpret directionally based on price.
   return {
     supports: strong,
     resistances: strong
@@ -329,10 +331,10 @@ export function simulateFuture(data, decision, steps = 30) {
 }
 
 // ------------------------------------------------------------
-//  ADVANCED OPTIONS PICKER
+//  ADVANCED OPTIONS PICKER (ALIGNED WITH GOLDEN TERMINAL)
 // ------------------------------------------------------------
 // decision: { direction, entry, stop, target, wait, valid }
-// daysToExpiry: number
+// daysToExpiry: number | null (if null → default short-term swing)
 // underlying: string (ticker)
 // ivHint: optional string like "IV elevated", "IV low", etc.
 export function pickOptionsContract(decision, daysToExpiry, underlying = "TICKER", ivHint = null) {
@@ -349,16 +351,19 @@ export function pickOptionsContract(decision, daysToExpiry, underlying = "TICKER
     };
   }
 
+  // Normalize daysToExpiry for automatic mode
+  let dte = Number.isFinite(daysToExpiry) ? Number(daysToExpiry) : 5;
+
   const dirText = decision.direction === "call"
     ? "CALL – expecting upside."
     : "PUT – expecting downside.";
 
   let expiryBucket = "";
-  if (daysToExpiry <= 2) expiryBucket = "0DTE–2DTE scalp";
-  else if (daysToExpiry <= 5) expiryBucket = "short‑term momentum";
-  else if (daysToExpiry <= 10) expiryBucket = "swing for about a week";
-  else if (daysToExpiry <= 20) expiryBucket = "1–3 week swing";
-  else expiryBucket = "position trade";
+  if (dte <= 2)       expiryBucket = "0DTE–2DTE scalp";
+  else if (dte <= 5)  expiryBucket = "short‑term momentum";
+  else if (dte <= 10) expiryBucket = "swing for about a week";
+  else if (dte <= 20) expiryBucket = "1–3 week swing";
+  else                expiryBucket = "position trade";
 
   const entry  = Number(decision.entry);
   const stop   = Number(decision.stop);
@@ -370,45 +375,67 @@ export function pickOptionsContract(decision, daysToExpiry, underlying = "TICKER
     ? (rewardPerShare / riskPerShare).toFixed(2)
     : "N/A";
 
-  // Build a small ladder of strikes around entry
-  const strikes = [
-    entry,
-    decision.direction === "call" ? entry + dynamicStep(entry) : entry - dynamicStep(entry),
-    decision.direction === "call" ? entry - dynamicStep(entry) : entry + dynamicStep(entry)
-  ].map(s => Math.round(s * 100) / 100);
+  // Aggression profile based on R:R and wait flag
+  let aggression = "balanced"; // "conservative" | "balanced" | "aggressive"
+  const rrNum = parseFloat(rr);
 
-  const candidates = strikes.map((strike, idx) => {
-    const moneyness =
-      decision.direction === "call"
-        ? (strike < entry ? "ITM" : (strike === entry ? "ATM" : "OTM"))
-        : (strike > entry ? "ITM" : (strike === entry ? "ATM" : "OTM"));
+  if (!decision.wait && rrNum >= 2.0) {
+    aggression = "aggressive";
+  } else if (decision.wait || rrNum < 1.5) {
+    aggression = "conservative";
+  }
 
-    const styleHint =
-      idx === 0 ? "balanced risk/reward, clean alignment with entry" :
-      idx === 1 ? "cheaper, higher leverage, more aggressive" :
-                  "safer, more expensive, more forgiving";
+  const step = dynamicStep(entry);
 
-    return {
-      label: `${underlying} ${strike} ${decision.direction.toUpperCase()}`,
-      strike,
-      moneyness,
-      styleHint
-    };
-  });
+  // Choose recommended strike based on aggression and direction
+  let recStrike = entry;
+  let recMoneyness = "ATM";
 
-  // Recommendation logic based on time
-  let recommendedIndex = 0;
-  if (daysToExpiry <= 2)      recommendedIndex = 1; // more aggressive
-  else if (daysToExpiry <= 10) recommendedIndex = 0; // ATM / plan-aligned
-  else                         recommendedIndex = 2; // ITM / safer
+  if (aggression === "conservative") {
+    // ITM
+    recStrike = decision.direction === "call"
+      ? entry - step
+      : entry + step;
+    recMoneyness = "ITM";
+  } else if (aggression === "aggressive") {
+    // OTM
+    recStrike = decision.direction === "call"
+      ? entry + step
+      : entry - step;
+    recMoneyness = "OTM";
+  } else {
+    // balanced → ATM
+    recStrike = entry;
+    recMoneyness = "ATM";
+  }
 
-  const recommended = candidates[recommendedIndex];
+  recStrike = Math.round(recStrike * 100) / 100;
+
+  let styleHint = "";
+  if (recMoneyness === "ITM") {
+    styleHint = "Safer, more expensive, more forgiving if price wobbles. Focused on consistency over home runs.";
+  } else if (recMoneyness === "ATM") {
+    styleHint = "Balanced risk/reward, clean alignment with your entry level. This is my default when the setup is clean.";
+  } else {
+    styleHint = "More aggressive, cheaper, higher leverage. Only makes sense if you truly respect your stop and the setup is strong.";
+  }
+
+  const recommended = {
+    label: `${underlying} ${recStrike} ${decision.direction.toUpperCase()}`,
+    strike: recStrike,
+    moneyness: recMoneyness,
+    styleHint
+  };
+
+  // Candidates (for future use / debugging)
+  const candidates = [];
 
   const notes = [];
   notes.push(`Direction: ${dirText}`);
   notes.push(`Plan entry: ${entry.toFixed(2)}, stop: ${stop.toFixed(2)}, target: ${target.toFixed(2)}.`);
   notes.push(`Approx reward:risk on the underlying: ${rr}:1.`);
   notes.push(`Timeframe: ${expiryBucket}.`);
+  notes.push(`Recommended moneyness: ${recMoneyness}.`);
 
   if (ivHint) notes.push(`Implied volatility context: ${ivHint}.`);
 
@@ -420,6 +447,7 @@ export function pickOptionsContract(decision, daysToExpiry, underlying = "TICKER
 
   notes.push("Use the underlying stop level, not the option price, to manage risk.");
   notes.push("Size your position so a full stop-out is emotionally and financially acceptable.");
+  notes.push("If the chart stops matching the original setup, the trade is over — even if the option still has time.");
 
   return {
     directionText: dirText,
