@@ -20,34 +20,31 @@
 
   <main class="gf-options">
     <section class="gf-hero">
-      <h2>Options Chain & Golden Chart</h2>
+      <h2>Golden Options Terminal</h2>
       <p>
-        This page takes the setup from the simulator and turns it into a full options chain and a
-        Golden Chart with entry, stop, and target marked. It’s meant to feel like I’m sitting
-        right next to you, showing you exactly what I’d do and why.
+        This page automatically takes the setup from the simulator and turns it into a Golden Chart
+        and a 5‑strike options ladder centered around the entry I chose. No inputs, no guessing —
+        just my personal read, laid out for you.
       </p>
     </section>
 
     <section class="gf-tool">
-      <h2>Setup</h2>
-      <label>Days Until Expiration</label>
-      <input id="expiry" type="number" min="0" max="60" value="5">
-
-      <label>Ticker Symbol</label>
-      <input id="ticker" type="text" placeholder="AAPL, TSLA, RIOT, etc.">
-
-      <button id="runOptions">Build Options Plan</button>
-
       <h2>Golden Chart</h2>
       <canvas id="opt-canvas" width="800" height="300"></canvas>
 
+      <div id="opt-summary" class="result"></div>
+
+      <h3>Recommended Contract</h3>
       <div id="opt-recommended" class="result"></div>
 
-      <h3>Full Options Chain</h3>
+      <h3>5‑Strike Golden Ladder</h3>
       <div id="opt-chain" class="opt-grid"></div>
 
       <h3>Clayvonte’s Notes</h3>
       <div id="opt-notes" class="notes"></div>
+
+      <h3>Discipline & Guidance</h3>
+      <div id="opt-discipline" class="notes"></div>
 
       <div class="gf-links">
         <button onclick="window.location.href='simulator.html'">← Back to Simulator</button>
