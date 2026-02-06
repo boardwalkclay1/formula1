@@ -1,12 +1,22 @@
-// simulator.js
-import { parseChartText, decideTrade, simulateFuture } from './core.js';
+// simulator.js — FULLY FIXED, ALWAYS-FIRES VERSION
+import { 
+  parseChartText, 
+  decideTrade, 
+  simulateFuture 
+} from './core.js';
 
+// 🔥 MOST IMPORTANT: LOAD THE RULES
+import './rules.js';
+
+// ------------------------------------------------------------
+//  DRAW FUTURE SIMULATION
+// ------------------------------------------------------------
 function drawSimulation(canvasId, data, decision) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext('2d');
 
-  const price = data.price || 0;
+  const price   = data.price   || 0;
   const dayHigh = data.dayHigh || price * 1.02;
   const dayLow  = data.dayLow  || price * 0.98;
 
@@ -34,7 +44,7 @@ function drawSimulation(canvasId, data, decision) {
   ctx.arc(w * 0.25, yFor(price), 5, 0, Math.PI * 2);
   ctx.fill();
 
-  // future path
+  // Future path
   ctx.strokeStyle = decision.direction === "call" ? "#3cff9d" :
                     decision.direction === "put"  ? "#ff4b4b" : "#999";
   ctx.lineWidth = 3;
@@ -48,8 +58,12 @@ function drawSimulation(canvasId, data, decision) {
   ctx.stroke();
 }
 
+// ------------------------------------------------------------
+//  HANDLE TEXT → PARSE → DECISION → OUTPUT
+// ------------------------------------------------------------
 function handleText(text) {
   const parsed = parseChartText(text);
+
   const data = {
     price:   parsed.price,
     dayHigh: parsed.dayHigh,
@@ -59,21 +73,29 @@ function handleText(text) {
     ma200:   parsed.ma200
   };
 
-  const decision = decideTrade(data);
+  // 🔥 ALWAYS PASS CONTEXT (even if empty for now)
+  const decision = decideTrade(data, { history: [] });
 
   const out = document.getElementById("sim-output");
   const logEl = document.getElementById("sim-log");
 
-  if (decision.direction === "none") {
+  // ------------------------------------------------------------
+  //  ADVANCED OUTPUT
+  // ------------------------------------------------------------
+  if (!decision.valid) {
     out.innerHTML = `
-      <h2>No Simple Trade</h2>
-      <p>The rules did not find a clean, obvious setup.</p>
+      <h2>No Clean Setup Yet</h2>
+      <p>This doesn’t mean the chart is bad — it means the setup isn’t obvious enough yet.</p>
+      <p>I only want you taking trades that are clean, simple, and obvious. Anything else is gambling.</p>
     `;
   } else {
     const dirText = decision.direction === "call" ? "CALL (upside)" : "PUT (downside)";
-    const waitText = decision.wait ? "WAIT for price to come back to your level." : "OK to ENTER near this level.";
+    const waitText = decision.wait 
+      ? "WAIT for price to come back to your level — don’t chase." 
+      : "Price is close enough — OK to enter near your level.";
+
     out.innerHTML = `
-      <h2>Prediction</h2>
+      <h2>Clayvonte’s Read</h2>
       <p><strong>Direction:</strong> ${dirText}</p>
       <p><strong>Entry:</strong> ${decision.entry}</p>
       <p><strong>Stop loss:</strong> ${decision.stop}</p>
@@ -82,25 +104,44 @@ function handleText(text) {
     `;
   }
 
-  logEl.textContent = decision.notes.join("\n");
+  // ------------------------------------------------------------
+  //  ADVANCED NOTES (Clayvonte-style logic)
+  // ------------------------------------------------------------
+  logEl.innerHTML = decision.notes
+    .map(n => `<p>${n}</p>`)
+    .join("");
 
+  // ------------------------------------------------------------
+  //  DRAW SIMULATION
+  // ------------------------------------------------------------
   drawSimulation("sim-canvas", data, decision);
 
-  // Save for options page
+  // ------------------------------------------------------------
+  //  SAVE FOR OPTIONS PICKER
+  // ------------------------------------------------------------
   localStorage.setItem("gf_decision", JSON.stringify(decision));
 }
 
+// ------------------------------------------------------------
+//  OCR HANDLER
+// ------------------------------------------------------------
 function runOCR(file) {
   const status = document.getElementById("sim-status");
   status.textContent = "Reading chart...";
-  Tesseract.recognize(file, 'eng').then(({ data }) => {
-    status.textContent = "Chart read. Running logic...";
-    handleText(data.text || "");
-  }).catch(() => {
-    status.textContent = "Could not read image.";
-  });
+
+  Tesseract.recognize(file, 'eng')
+    .then(({ data }) => {
+      status.textContent = "Chart read. Running logic...";
+      handleText(data.text || "");
+    })
+    .catch(() => {
+      status.textContent = "Could not read image.";
+    });
 }
 
+// ------------------------------------------------------------
+//  INIT
+// ------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   const fileInput = document.getElementById("file-input");
 
