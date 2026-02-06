@@ -1,4 +1,4 @@
-// simulator.js — upgraded
+// simulator.js — FINAL FIXED VERSION
 import { parseChartText, decideTrade, simulateFuture } from './core.js';
 import './rules.js';
 
@@ -58,7 +58,8 @@ function handleText(text) {
     dayLow:  parsed.dayLow,
     maFast:  parsed.maFast,
     maSlow:  parsed.maSlow,
-    ma200:   parsed.ma200
+    ma200:   parsed.ma200,
+    ticker:  parsed.ticker || "TICKER"
   };
 
   const decision = decideTrade(data, { history: [] });
@@ -92,7 +93,7 @@ function handleText(text) {
 
   drawSimulation("sim-canvas", data, decision);
 
-  // 🔥 Save EVERYTHING for options page
+  // SAVE EVERYTHING FOR OPTIONS PAGE
   localStorage.setItem("gf_decision", JSON.stringify(decision));
   localStorage.setItem("gf_data", JSON.stringify(data));
 }
@@ -100,12 +101,15 @@ function handleText(text) {
 function runOCR(file) {
   const status = document.getElementById("sim-status");
   status.textContent = "Reading chart...";
-  Tesseract.recognize(file, 'eng').then(({ data }) => {
-    status.textContent = "Chart read. Running logic...";
-    handleText(data.text || "");
-  }).catch(() => {
-    status.textContent = "Could not read image.";
-  });
+
+  Tesseract.recognize(file, 'eng')
+    .then(({ data }) => {
+      status.textContent = "Chart read. Running logic...";
+      handleText(data.text || "");
+    })
+    .catch(() => {
+      status.textContent = "Could not read image.";
+    });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
