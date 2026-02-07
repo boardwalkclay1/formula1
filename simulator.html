@@ -1,15 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <title>Golden Formula – Simulator</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="style.css" />
-  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="modules/simulator.js"></script>
   <style>
     :root { --bg:#050505; --panel:#070707; --gold:#d4af37; --muted:#9b9b9b; --text:#e6e6e6; }
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Arial;}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Arial,Helvetica,sans-serif;}
     .gf-header{display:flex;align-items:center;gap:18px;padding:18px 28px;background:linear-gradient(180deg,var(--panel),#050505);border-bottom:1px solid rgba(212,175,55,0.06);}
     .gf-header h1{margin:0;color:var(--gold);font-size:18px;}
     .gf-header nav{margin-left:auto;display:flex;gap:12px;}
@@ -31,6 +29,9 @@
     .ticker-btn{padding:8px 10px;border-radius:6px;border:none;background:var(--gold);color:#050505;cursor:pointer;font-weight:600;}
     #ticker-display{color:var(--gold);font-weight:700;margin-top:8px;}
     pre.debug{background:#0b0b0b;color:#cfcfcf;padding:12px;border-radius:8px;overflow:auto;max-height:260px;}
+    .status { margin-left:8px; color:var(--muted); font-size:13px; }
+    .error { color:#ff8a8a; font-weight:700; }
+    .hint { color:#bdbdbd; font-size:13px; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -48,10 +49,10 @@
   <main class="gf-options">
     <section class="gf-hero">
       <h2>Golden Simulator</h2>
-      <p>Drop a chart photo, paste from clipboard, upload, or lookup a ticker. The engine reads the image, infers scale, runs rules, and paints a cinematic gold chart with entry, stop, and target.</p>
+      <p class="hint">Drop a chart photo, paste from clipboard, upload, or lookup a ticker. The engine reads the image, infers scale, runs rules, and paints a cinematic gold chart with entry, stop, and target.</p>
     </section>
 
-    <section class="gf-tool">
+    <section class="gf-tool" id="gf-tool">
       <div class="ticker-row">
         <input id="ticker-input" class="ticker-input" placeholder="Ticker (AAPL)" />
         <button id="ticker-lookup" class="ticker-btn">Lookup</button>
@@ -70,21 +71,274 @@
         <div class="col">
           <h3 style="margin:0 0 8px 0;color:#fff">Generated / Golden Chart</h3>
           <div style="width:100%;max-width:900px;margin:6px 0;">
-            <canvas id="sim-canvas" width="900" height="420"></canvas>
+            <canvas id="sim-canvas" width="900" height="420" aria-label="Golden chart canvas"></canvas>
           </div>
-          <div id="ticker-display"></div>
-          <div id="sim-output" class="sim-summary"></div>
+          <div id="ticker-display" aria-live="polite"></div>
+          <div id="sim-output" class="sim-summary" aria-live="polite"></div>
         </div>
 
         <div class="col">
           <h3 style="margin:0 0 8px 0;color:#fff">Logic Log</h3>
-          <div id="sim-log" class="notes"></div>
+          <div id="sim-log" class="notes" role="log" aria-live="polite"></div>
           <div class="gf-links">
-            <button onclick="window.location.href='options.html'">Go to Options →</button>
+            <button id="open-options">Go to Options →</button>
           </div>
         </div>
       </div>
+
+      <div id="loader-info" class="hint" style="margin-top:12px;">
+        <span id="loader-message">Initializing…</span>
+        <span id="loader-error" class="error" style="display:none;margin-left:12px;"></span>
+      </div>
     </section>
   </main>
+
+  <!-- Load Tesseract first (non-module) -->
+  <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+
+  <!-- Module loader: robustly import simulator and wire UI. -->
+  <script type="module">
+    // This loader ensures Tesseract is available, imports the simulator module,
+    // and calls its exported init function if present. It also provides helpful
+    // console and UI messages when something goes wrong.
+    const loaderMessage = document.getElementById('loader-message');
+    const loaderError = document.getElementById('loader-error');
+    const simStatus = document.getElementById('sim-status');
+
+    function setLoader(msg) { if (loaderMessage) loaderMessage.textContent = msg; }
+    function setError(msg) { if (loaderError) { loaderError.style.display = 'inline'; loaderError.textContent = msg; } console.error(msg); }
+
+    // Ensure page is served over http(s)
+    if (location.protocol === 'file:') {
+      setLoader('Warning: open this page via a local web server (not file://).');
+      setError('Modules may not load over file:// — run: npx http-server . or python -m http.server');
+    }
+
+    // Wait for Tesseract to be available (it is loaded as a non-module script above)
+    async function waitForTesseract(timeout = 5000) {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        if (window.Tesseract) return window.Tesseract;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return null;
+    }
+
+    (async () => {
+      setLoader('Waiting for Tesseract to load...');
+      const Tesseract = await waitForTesseract(8000);
+      if (!Tesseract) {
+        setLoader('Tesseract not available.');
+        setError('Tesseract failed to load. Check network or CSP. The simulator requires Tesseract.js.');
+        simStatus.textContent = 'Tesseract not available — check console.';
+        return;
+      }
+      setLoader('Tesseract loaded. Importing simulator module...');
+
+      try {
+        // Import the simulator module (must exist at modules/simulator.js)
+        const mod = await import('./modules/simulator.js');
+
+        // Prefer an exported init function, otherwise try common exported names
+        const initFn = mod.init || mod.default || mod.mount || mod.setup || mod.start;
+        if (typeof initFn === 'function') {
+          setLoader('Starting simulator...');
+          // Call init with a small API object so module can wire UI if it wants
+          await initFn({
+            canvasId: 'sim-canvas',
+            fileInputId: 'file-input',
+            statusId: 'sim-status',
+            outputId: 'sim-output',
+            logId: 'sim-log',
+            tickerInputId: 'ticker-input',
+            tickerLookupId: 'ticker-lookup',
+            tickerSaveId: 'ticker-save',
+            tickerSendId: 'ticker-send',
+            tickerDisplayId: 'ticker-display'
+          });
+          setLoader('Ready.');
+          simStatus.textContent = 'Ready. Drop a chart, paste an image, or lookup a ticker.';
+        } else {
+          // If no init, try to use a global API the module may expose
+          setLoader('Simulator module loaded. Wiring fallback handlers...');
+          if (window.__GF_SIM && typeof window.__GF_SIM.processFile === 'function') {
+            setLoader('Using window.__GF_SIM.processFile API.');
+            wireFallbackUI(window.__GF_SIM);
+            setLoader('Ready.');
+            simStatus.textContent = 'Ready. Drop a chart, paste an image, or lookup a ticker.';
+          } else {
+            setLoader('Simulator module loaded but no init() or window.__GF_SIM found.');
+            setError('modules/simulator.js did not export an init function or window.__GF_SIM. Open console for details.');
+            simStatus.textContent = 'Simulator not initialized — check console.';
+          }
+        }
+      } catch (err) {
+        setLoader('Failed to import simulator module.');
+        setError(String(err));
+        simStatus.textContent = 'Error loading simulator — check console.';
+        console.error(err);
+      }
+    })();
+
+    // Fallback wiring if module exposes window.__GF_SIM with processFile, lookupTicker, etc.
+    function wireFallbackUI(api) {
+      const fileInput = document.getElementById('file-input');
+      const canvas = document.getElementById('sim-canvas');
+      const statusEl = document.getElementById('sim-status');
+      const tickerInput = document.getElementById('ticker-input');
+      const lookupBtn = document.getElementById('ticker-lookup');
+      const saveBtn = document.getElementById('ticker-save');
+      const sendBtn = document.getElementById('ticker-send');
+      const tickerDisplay = document.getElementById('ticker-display');
+
+      if (fileInput) {
+        fileInput.addEventListener('change', async (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          statusEl.textContent = 'File selected. Starting analysis...';
+          try {
+            const res = await api.processFile(file);
+            if (res && res.parsed && res.parsed.ticker) tickerDisplay.textContent = `Ticker: ${res.parsed.ticker}`;
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Processing failed';
+          }
+        });
+      }
+
+      document.addEventListener('dragover', (e) => e.preventDefault());
+      document.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!file) return;
+        statusEl.textContent = 'File dropped. Starting analysis...';
+        try {
+          const res = await api.processFile(file);
+          if (res && res.parsed && res.parsed.ticker) tickerDisplay.textContent = `Ticker: ${res.parsed.ticker}`;
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = 'Processing failed';
+        }
+      });
+
+      document.addEventListener('paste', async (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (items) {
+          for (const it of items) {
+            if (it.type && it.type.indexOf('image') !== -1) {
+              const blob = it.getAsFile();
+              if (blob) {
+                statusEl.textContent = 'Pasted image detected — processing...';
+                try {
+                  const res = await api.processFile(blob);
+                  if (res && res.parsed && res.parsed.ticker) tickerDisplay.textContent = `Ticker: ${res.parsed.ticker}`;
+                } catch (err) {
+                  console.error(err);
+                  statusEl.textContent = 'Processing failed';
+                }
+                return;
+              }
+            }
+          }
+        }
+        const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+        if (text && /^[A-Za-z]{1,6}$/.test(text.trim())) {
+          // If API exposes lookupTicker, use it; otherwise show message
+          const symbol = text.trim().toUpperCase();
+          if (typeof api.lookupTicker === 'function') {
+            statusEl.textContent = `Pasted ticker ${symbol} — fetching chart...`;
+            try {
+              const { profile, quote, candles } = await api.lookupTicker(symbol);
+              // If API provides sendCanvasToSimulator, use it; otherwise try processFile with generated blob
+              if (typeof api.renderLookupCanvas === 'function' && typeof api.sendCanvasToSimulator === 'function') {
+                const tmp = document.createElement('canvas');
+                tmp.width = 900; tmp.height = 420;
+                api.renderLookupCanvas(candles, { symbol, name: profile.name, price: quote.c }, tmp);
+                statusEl.textContent = 'Lookup chart generated — analyzing...';
+                await api.sendCanvasToSimulator(tmp, api.processFile);
+              } else {
+                statusEl.textContent = 'Ticker lookup succeeded but simulator lacks sendCanvasToSimulator API.';
+              }
+            } catch (err) {
+              console.error(err);
+              statusEl.textContent = 'Ticker lookup failed';
+            }
+          } else {
+            statusEl.textContent = 'Ticker pasted but lookup API not available.';
+          }
+        }
+      });
+
+      // Wire lookup/save/send buttons if API provides them
+      if (lookupBtn && tickerInput && typeof api.lookupTicker === 'function') {
+        lookupBtn.addEventListener('click', async () => {
+          const symbol = (tickerInput.value || '').trim().toUpperCase();
+          if (!symbol) return;
+          statusEl.textContent = `Looking up ${symbol}...`;
+          try {
+            const { profile, quote, candles } = await api.lookupTicker(symbol);
+            const tmp = document.createElement('canvas'); tmp.width = 900; tmp.height = 420;
+            if (typeof api.renderLookupCanvas === 'function') {
+              api.renderLookupCanvas(candles, { symbol, name: profile.name, price: quote.c }, tmp);
+              // draw tmp into main canvas for preview
+              const mainCanvas = document.getElementById('sim-canvas');
+              const mainCtx = mainCanvas.getContext('2d');
+              mainCanvas.width = tmp.width; mainCanvas.height = tmp.height;
+              mainCtx.drawImage(tmp, 0, 0);
+              window.__GF_LOOKUP_CANVAS = tmp;
+              document.getElementById('ticker-display').textContent = `${symbol} • ${profile.name || ''}`;
+              statusEl.textContent = 'Lookup rendered. Use Save or Send.';
+            } else {
+              statusEl.textContent = 'Lookup succeeded but renderLookupCanvas not available.';
+            }
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = 'Lookup failed';
+          }
+        });
+      }
+
+      if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+          const tmp = window.__GF_LOOKUP_CANVAS;
+          if (!tmp) return;
+          if (typeof api.saveCanvasBlob === 'function') {
+            await api.saveCanvasBlob(tmp);
+          } else {
+            // fallback: download tmp directly
+            tmp.toBlob((blob) => {
+              if (!blob) return;
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = `chart-${Date.now()}.png`;
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 5000);
+            }, 'image/png');
+          }
+        });
+      }
+
+      if (sendBtn) {
+        sendBtn.addEventListener('click', async () => {
+          const tmp = window.__GF_LOOKUP_CANVAS;
+          if (!tmp) return;
+          if (typeof api.sendCanvasToSimulator === 'function') {
+            await api.sendCanvasToSimulator(tmp, api.processFile);
+          } else {
+            // fallback: convert to File and call processFile
+            tmp.toBlob(async (blob) => {
+              if (!blob) return;
+              const file = new File([blob], `lookup-${Date.now()}.png`, { type: 'image/png' });
+              await api.processFile(file);
+            }, 'image/png');
+          }
+        });
+      }
+
+      // open options button
+      const openOptions = document.getElementById('open-options');
+      if (openOptions) openOptions.addEventListener('click', () => window.location.href = 'options.html');
+    }
+  </script>
 </body>
 </html>
