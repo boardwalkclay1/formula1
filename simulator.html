@@ -25,8 +25,10 @@
 
       <input type="file" id="file-input" accept="image/*" style="display:none;">
 
+      <!-- STATUS -->
       <p id="sim-status" class="sim-status"></p>
 
+      <!-- SUMMARY -->
       <section class="summary-card">
         <h2>Setup Summary</h2>
         <div id="sim-output" class="summary-grid"></div>
@@ -41,11 +43,13 @@
         <div class="strategy-tag" id="strategy-tag"></div>
       </section>
 
+      <!-- NARRATIVE -->
       <section class="narrative-card">
         <h2>Golden Formula Narrative</h2>
         <ul id="narrative-list" class="narrative-list"></ul>
       </section>
 
+      <!-- LOG -->
       <section class="log-card">
         <h3>Logic Log</h3>
         <pre id="sim-log" class="sim-log"></pre>
@@ -74,7 +78,10 @@
 
   </main>
 
+  <!-- OCR -->
   <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+
+  <!-- PIPELINE + SIMULATOR -->
   <script type="module" src="core-logic.js"></script>
   <script type="module" src="simulator.js"></script>
 
