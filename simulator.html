@@ -15,7 +15,7 @@
 
       <h1 class="app-title">Golden Simulator</h1>
 
-      <!-- DROP ZONE + GOLD COIN BUTTON -->
+      <!-- DROP ZONE + PURE CSS GOLD BUTTON -->
       <div id="drop-zone" class="drop-zone">
         <button id="upload-btn" class="gold-coin-btn">
           Upload Screenshot
@@ -25,10 +25,8 @@
 
       <input type="file" id="file-input" accept="image/*" style="display:none;">
 
-      <!-- STATUS -->
       <p id="sim-status" class="sim-status"></p>
 
-      <!-- SUMMARY -->
       <section class="summary-card">
         <h2>Setup Summary</h2>
         <div id="sim-output" class="summary-grid"></div>
@@ -43,13 +41,11 @@
         <div class="strategy-tag" id="strategy-tag"></div>
       </section>
 
-      <!-- NARRATIVE -->
       <section class="narrative-card">
         <h2>Golden Formula Narrative</h2>
         <ul id="narrative-list" class="narrative-list"></ul>
       </section>
 
-      <!-- LOG -->
       <section class="log-card">
         <h3>Logic Log</h3>
         <pre id="sim-log" class="sim-log"></pre>
@@ -57,7 +53,7 @@
 
     </section>
 
-    <!-- RIGHT PANEL: CHART -->
+    <!-- RIGHT PANEL -->
     <section class="right">
       <div class="chart-wrapper">
         <canvas id="sim-canvas" width="900" height="400"></canvas>
@@ -78,10 +74,7 @@
 
   </main>
 
-  <!-- OCR -->
   <script src="https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
-
-  <!-- PIPELINE + SIMULATOR -->
   <script type="module" src="core-logic.js"></script>
   <script type="module" src="simulator.js"></script>
 
